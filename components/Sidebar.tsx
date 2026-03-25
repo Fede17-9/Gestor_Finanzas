@@ -1,6 +1,7 @@
 "use client";
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 import { 
   LayoutDashboard, 
   ArrowLeftRight, 
@@ -20,6 +21,12 @@ const menuItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
 
   return (
     <aside className="w-64 h-screen bg-slate-900 text-white flex flex-col fixed left-0 top-0 z-50">
@@ -49,7 +56,10 @@ export default function Sidebar() {
 
       {/* Footer / Usuario */}
       <div className="p-4 border-t border-slate-800">
-        <button className="flex items-center gap-3 p-3 w-full text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors">
+        <button 
+          onClick={handleLogout}
+          className="flex items-center gap-3 p-3 w-full text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
+        >
           <LogOut size={20} />
           <span>Cerrar Sesión</span>
         </button>
