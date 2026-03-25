@@ -5,9 +5,10 @@ interface HeaderProps {
   nickname: string;
   saldo: number;
   moneda: string;
+  avatarUrl?: string; // Prop opcional para el avatar
 }
 
-export default function DashboardHeader({ nickname, saldo, moneda }: HeaderProps) {
+export default function DashboardHeader({ nickname, saldo, moneda, avatarUrl }: HeaderProps) {
   return (
     <header className="flex justify-between items-center mb-8 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
       <div>
@@ -31,8 +32,14 @@ export default function DashboardHeader({ nickname, saldo, moneda }: HeaderProps
           <button className="p-2 text-slate-400 hover:text-blue-600 transition-colors">
             <Bell size={20} />
           </button>
+          
           <div className="flex items-center gap-2 bg-slate-50 p-1 pr-3 rounded-full border border-slate-200">
-            <UserCircle size={28} className="text-slate-400" />
+            {/* Si trae avatar lo pinta, de lo contrario pone el icono default */}
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" className="w-8 h-8 rounded-full border border-slate-200" />
+            ) : (
+              <UserCircle size={28} className="text-slate-400" />
+            )}
             <span className="text-sm font-medium text-slate-700">{nickname}</span>
           </div>
         </div>
