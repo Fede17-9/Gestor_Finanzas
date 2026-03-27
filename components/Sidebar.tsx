@@ -14,10 +14,10 @@ import {
 
 const menuItems = [
   { name: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-  { name: 'Movimientos', icon: ArrowLeftRight, href: '/movimientos' },
-  { name: 'Calendario', icon: Calendar, href: '/calendario' },
-  { name: 'Metas', icon: Target, href: '/metas' },
-  { name: 'Configuración', icon: Settings, href: '/configuracion' },
+  { name: 'Movimientos', icon: ArrowLeftRight, href: '/dashboard/movimientos' },
+  { name: 'Calendario', icon: Calendar, href: '/dashboard/calendario' },
+  { name: 'Metas', icon: Target, href: '/dashboard/metas' },
+  { name: 'Configuración', icon: Settings, href: '/dashboard/configuracion' },
 ];
 
 export default function Sidebar() {
@@ -42,7 +42,7 @@ export default function Sidebar() {
       {/* Navegación */}
       <nav className="flex-1 px-4 space-y-2 overflow-y-auto mt-4">
         {menuItems.map((item) => {
-          const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
+          const isActive = item.href === '/dashboard' ? pathname === '/dashboard' : pathname?.startsWith(item.href);
           return (
             <Link 
               key={item.name} 

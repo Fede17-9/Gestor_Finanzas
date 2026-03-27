@@ -4,7 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Wallet } from "lucide-react";
+import { Infinity } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -29,27 +29,33 @@ export default function LoginPage() {
     }
   };
 
-  // Clases reutilizables para mantener el diseño profesional, compacto y legible
-  const inputStyles = "w-full border border-slate-300 px-3 py-2 text-sm text-slate-900 bg-white rounded-md focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 placeholder-slate-400 transition-all";
-  const labelStyles = "block text-sm font-semibold text-slate-700 mb-1.5";
+  const inputStyles = "w-full border border-zinc-800 px-4 py-3 text-sm text-white bg-zinc-900 rounded-xl focus:outline-none focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] placeholder-zinc-600 transition-all";
+  const labelStyles = "block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1";
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-4">
-      <div className="flex flex-col gap-6 w-full max-w-sm bg-white p-6 sm:p-8 rounded-xl shadow-sm border border-slate-200">
-        <div className="flex flex-col items-center gap-2 mb-2 text-center">
-          <div className="bg-blue-600 p-2.5 rounded-lg text-white shadow-sm mb-1">
-            <Wallet size={24} />
+    <div className="flex flex-col items-center justify-center min-h-screen bg-[#000000] p-4 relative overflow-hidden font-sans selection:bg-[#39FF14] selection:text-black">
+      {/* Decorative Glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#39FF14]/5 rounded-full blur-[150px] pointer-events-none"></div>
+
+      <div className="flex flex-col gap-8 w-full max-w-sm bg-[#09090b]/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-zinc-800/50 relative z-10">
+        
+        {/* Línea decorativa neón */}
+        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#39FF14]/50 to-transparent"></div>
+
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Infinity className="text-[#39FF14]" size={48} strokeWidth={2} />
+          <div>
+            <h1 className="text-2xl font-black text-white tracking-widest uppercase">Flux</h1>
+            <p className="text-[10px] uppercase font-semibold tracking-widest text-[#39FF14] mt-1">Acceso al Sistema</p>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Bienvenido de nuevo</h1>
-          <p className="text-sm text-slate-500">Ingresa tus credenciales para continuar</p>
         </div>
 
-        <form onSubmit={handleLogin} className="flex flex-col gap-4">
+        <form onSubmit={handleLogin} className="flex flex-col gap-5">
           <div>
-            <label className={labelStyles}>Correo electrónico</label>
+            <label className={labelStyles}>Identificador (Email)</label>
             <input 
               type="email" 
-              placeholder="tu@email.com" 
+              placeholder="agente@flux.net" 
               onChange={(e) => setEmail(e.target.value)} 
               className={inputStyles} 
               required 
@@ -57,7 +63,7 @@ export default function LoginPage() {
           </div>
           
           <div>
-            <label className={labelStyles}>Contraseña</label>
+            <label className={labelStyles}>Clave de Acceso</label>
             <input 
               type="password" 
               placeholder="••••••••" 
@@ -70,14 +76,14 @@ export default function LoginPage() {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-blue-600 text-white font-medium py-2.5 mt-3 rounded-md hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+            className="w-full bg-[#39FF14] text-black font-black uppercase tracking-widest text-xs py-4 rounded-xl hover:bg-[#a3e635] hover:shadow-[0_0_20px_rgba(57,255,20,0.4)] transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed mt-2"
           >
-            {loading ? "Entrando..." : "Iniciar Sesión"}
+            {loading ? "VERIFICANDO..." : "INICIAR SESIÓN"}
           </button>
         </form>
 
-        <p className="text-center text-sm text-slate-600 mt-1">
-          ¿No tienes una cuenta? <Link href="/registro" className="text-blue-600 font-medium hover:underline">Regístrate gratis</Link>
+        <p className="text-center text-xs font-semibold text-zinc-500 uppercase tracking-widest">
+          ¿NUEVO USUARIO? <Link href="/registro" className="text-[#39FF14] hover:text-white transition-colors">REGÍSTRATE</Link>
         </p>
       </div>
     </div>
