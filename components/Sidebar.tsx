@@ -8,14 +8,15 @@ import {
   Target, 
   Calendar, 
   Settings, 
-  LogOut 
+  LogOut,
+  Infinity
 } from 'lucide-react';
 
 const menuItems = [
   { name: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
   { name: 'Movimientos', icon: ArrowLeftRight, href: '/movimientos' },
   { name: 'Calendario', icon: Calendar, href: '/calendario' },
-  { name: 'Metas de Ahorro', icon: Target, href: '/metas' },
+  { name: 'Metas', icon: Target, href: '/metas' },
   { name: 'Configuración', icon: Settings, href: '/configuracion' },
 ];
 
@@ -29,39 +30,44 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-64 h-screen bg-slate-900 text-white flex flex-col fixed left-0 top-0 z-50">
+    <aside className="w-64 h-screen bg-[#09090b] text-zinc-300 flex flex-col fixed left-0 top-0 z-50 border-r border-zinc-800/50 shadow-2xl">
       {/* Header del Sidebar */}
-      <div className="p-6 text-2xl font-bold border-b border-slate-800 text-blue-400">
-        FinanzaPro
+      <div className="p-8 flex items-center gap-3">
+        <Infinity className="text-[#39FF14]" size={36} strokeWidth={2.5} />
+        <span className="text-xl font-black text-white tracking-widest uppercase">
+          Flux
+        </span>
       </div>
 
       {/* Navegación */}
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+      <nav className="flex-1 px-4 space-y-2 overflow-y-auto mt-4">
         {menuItems.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
           return (
             <Link 
               key={item.name} 
               href={item.href}
-              className={`flex items-center gap-3 p-3 rounded-lg transition-colors duration-200 ${
-                isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              className={`flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-300 ${
+                isActive 
+                  ? 'bg-[#39FF14]/10 text-[#39FF14] font-semibold border border-[#39FF14]/20 shadow-[0_0_15px_rgba(57,255,20,0.1)]' 
+                  : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-white'
               }`}
             >
-              <item.icon size={20} />
-              <span>{item.name}</span>
+              <item.icon size={20} className={isActive ? 'drop-shadow-[0_0_8px_rgba(57,255,20,0.8)]' : ''} />
+              <span className="tracking-wide text-sm">{item.name}</span>
             </Link>
           );
         })}
       </nav>
 
       {/* Footer / Usuario */}
-      <div className="p-4 border-t border-slate-800">
+      <div className="p-4">
         <button 
           onClick={handleLogout}
-          className="flex items-center gap-3 p-3 w-full text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
+          className="flex items-center gap-3 px-4 py-3 w-full text-zinc-500 hover:text-[#ff3939] hover:bg-[#ff3939]/10 rounded-xl transition-all duration-300 group"
         >
-          <LogOut size={20} />
-          <span>Cerrar Sesión</span>
+          <LogOut size={20} className="group-hover:scale-110 transition-transform" />
+          <span className="font-medium text-sm">Desconectar</span>
         </button>
       </div>
     </aside>
