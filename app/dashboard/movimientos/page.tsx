@@ -220,7 +220,11 @@ export default function MovimientosPage() {
                             <span className="flex items-center gap-2">
                               {mov.descripcion_detalle || 'Operación'}
                               {/* ⚡ Rayo si el registro nació de la máquina automática */}
-                              {mov.es_automatico && <Zap size={12} className="text-[#39FF14] fill-[#39FF14]" title="Generado por el sistema de forma automática" />}
+                              {mov.es_automatico && (
+                                <span title="Generado por el sistema de forma automática" className="flex items-center">
+                                  <Zap size={12} className="text-[#39FF14] fill-[#39FF14]" />
+                                </span>
+                              )}
                             </span>
                             <span className="text-[9px] text-zinc-500 font-mono tracking-widest">{catNombre}</span>
                           </div>
