@@ -16,6 +16,7 @@ export default function MovimientosPage() {
   const [tipoMovimiento, setTipoMovimiento] = useState("2"); // 2 = Egreso por defecto
   const [metodoPago, setMetodoPago] = useState("Efectivo");
   const [categoria, setCategoria] = useState(""); 
+  const [fechaOperacion, setFechaOperacion] = useState(new Date().toISOString().split('T')[0]);
   
   // Recurrencia
   const [isRecurrente, setIsRecurrente] = useState(false);
@@ -98,7 +99,8 @@ export default function MovimientosPage() {
         monto_transaccion: parseFloat(monto),
         metodo_pago: metodoPago,
         descripcion_detalle: descripcion,
-        es_automatico: false 
+        fecha_operacion: fechaOperacion,
+        es_automatico: isRecurrente 
       }
     ]);
 
@@ -131,6 +133,7 @@ export default function MovimientosPage() {
     setDescripcion("");
     setCategoria("");
     setMetodoPago("Efectivo");
+    setFechaOperacion(new Date().toISOString().split('T')[0]);
     setIsRecurrente(false);
     setFrecuencia("Mensual");
     setDiaEjecucion("1");
@@ -206,7 +209,9 @@ export default function MovimientosPage() {
               </thead>
               <tbody>
                 {movimientos.map((mov) => {
-                  const fecha = new Date(mov.fecha_operacion).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+                  const [year, month, day] = mov.fecha_operacion.split('T')[0].split('-');
+                  const fechaOp = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                  const fecha = fechaOp.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
                   const isIngreso = mov.id_tipo === 1;
                   const catNombre = mov.categorias?.nombre_categoria || "Sin categoría";
 
@@ -318,12 +323,19 @@ export default function MovimientosPage() {
                 </div>
               </div>
 
-              {/* Descripción */}
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Descripción Breve</label>
-                <input type="text" required value={descripcion} onChange={(e) => setDescripcion(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-zinc-500 transition-all font-medium text-sm placeholder-zinc-600"
-                  placeholder="Ej: Salario Quincena" />
+              {/* Fecha y Descripción */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Fecha Operación</label>
+                  <input type="date" required value={fechaOperacion} onChange={(e) => setFechaOperacion(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#39FF14] transition-all font-medium text-xs [color-scheme:dark]" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Descripción Breve</label>
+                  <input type="text" required value={descripcion} onChange={(e) => setDescripcion(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#39FF14] transition-all font-medium text-sm placeholder-zinc-600"
+                    placeholder="Ej: Salario Quincena" />
+                </div>
               </div>
 
               {/* Automátización / Recurrencia */}
