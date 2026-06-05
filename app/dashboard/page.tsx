@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Activity, Plus, TrendingUp, TrendingDown, CreditCard, ArrowLeftRight } from 'lucide-react';
 import Link from 'next/link';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, LabelList } from 'recharts';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -52,7 +52,7 @@ export default function DashboardPage() {
 
       let { data: movData } = await supabase
         .from('movimientos')
-        .select('id_movimiento, monto_transaccion, fecha_operacion, id_tipo, descripcion_detalle, id_categoria, es_automatico')
+        .select('id_movimiento, monto_transaccion, fecha_operacion, id_tipo, descripcion_detalle, id_categoria, es_automatico, categorias(nombre_categoria)')
         .eq('id_usuario', session.user.id)
         .order('fecha_operacion', { ascending: false });
 
@@ -145,7 +145,7 @@ export default function DashboardPage() {
                   // Refrescar movimientos ya con el nuevo historial cargado
                   const { data: updatedMovData } = await supabase
                       .from('movimientos')
-                      .select('id_movimiento, monto_transaccion, fecha_operacion, id_tipo, descripcion_detalle, id_categoria, es_automatico')
+                      .select('id_movimiento, monto_transaccion, fecha_operacion, id_tipo, descripcion_detalle, id_categoria, es_automatico, categorias(nombre_categoria)')
                       .eq('id_usuario', session.user.id)
                       .order('fecha_operacion', { ascending: false });
                   if (updatedMovData) movData = updatedMovData;
@@ -387,6 +387,170 @@ export default function DashboardPage() {
         </div>
         
       </div>
+
+      {/* ══════════════════════════════════════════════
+          SECCIÓN: Análisis por Categoría
+          Datos derivados de allMovs + selectedDate
+          Sin nuevas consultas a Supabase
+      ══════════════════════════════════════════════ */}
+      {(() => {
+        const currentMonth = selectedDate.getMonth();
+        const currentYear  = selectedDate.getFullYear();
+
+        // Filtrar movimientos del mes seleccionado
+        const movsDelMes = allMovs.filter(mov => {
+          const [y, m] = mov.fecha_operacion.split('T')[0].split('-');
+          return parseInt(m) - 1 === currentMonth && parseInt(y) === currentYear;
+        });
+
+        // Agrupar por categoría: acumula montos
+        function agrupar(tipo: number) {
+          const mapa: Record<string, number> = {};
+          movsDelMes
+            .filter(m => m.id_tipo === tipo)
+            .forEach(m => {
+              const cat = m.categorias?.nombre_categoria ?? 'Sin categoría';
+              mapa[cat] = (mapa[cat] ?? 0) + Number(m.monto_transaccion);
+            });
+          const total = Object.values(mapa).reduce((a, b) => a + b, 0);
+          return Object.entries(mapa)
+            .map(([name, value]) => ({
+              name,
+              value,
+              pct: total > 0 ? Math.round((value / total) * 100) : 0,
+            }))
+            .sort((a, b) => b.value - a.value);
+        }
+
+        const gastosCat  = agrupar(2);
+        const ingresosCat = agrupar(1);
+
+        // Tooltip personalizado reutilizable
+        const CustomTooltip = ({ active, payload }: any) => {
+          if (!active || !payload?.length) return null;
+          const d = payload[0].payload;
+          return (
+            <div className="bg-[#09090b] border border-zinc-800 rounded-xl px-4 py-3 text-xs font-mono shadow-2xl">
+              <p className="text-zinc-400 mb-1 uppercase tracking-widest">{d.name}</p>
+              <p className="font-black text-white">${d.value.toLocaleString()}</p>
+              <p className="text-zinc-500">{d.pct}% del total</p>
+            </div>
+          );
+        };
+
+        // Tarjeta individual de categoría
+        function TarjetaCategoria({
+          titulo, datos, colorBarra, colorTexto, msgVacio
+        }: {
+          titulo: string;
+          datos: { name: string; value: number; pct: number }[];
+          colorBarra: string;
+          colorTexto: string;
+          msgVacio: string;
+        }) {
+          return (
+            <div className="bg-[#09090b] border border-zinc-800/50 rounded-3xl p-6 shadow-2xl relative overflow-hidden flex flex-col gap-4">
+              <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent" />
+              <h3 className="text-sm font-black text-white uppercase tracking-widest">{titulo}</h3>
+
+              {datos.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-2">
+                  <p className="text-zinc-600 font-mono text-[10px] uppercase tracking-widest text-center">{msgVacio}</p>
+                </div>
+              ) : (
+                <>
+                  {/* Gráfico horizontal */}
+                  <div className="w-full" style={{ height: Math.max(120, datos.length * 44) }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={datos}
+                        layout="vertical"
+                        margin={{ top: 0, right: 16, left: 0, bottom: 0 }}
+                      >
+                        <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="#27272a" />
+                        <XAxis
+                          type="number"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: '#52525b', fontSize: 9, fontFamily: 'monospace' }}
+                          tickFormatter={v => `$${v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v}`}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
+                          width={90}
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: '#a1a1aa', fontSize: 10, fontFamily: 'monospace' }}
+                          tickFormatter={v => v.length > 10 ? v.substring(0, 9) + '…' : v}
+                        />
+                        <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={20}>
+                          {datos.map((_, idx) => (
+                            <Cell key={idx} fill={colorBarra} fillOpacity={1 - idx * 0.12} />
+                          ))}
+                          <LabelList
+                            dataKey="pct"
+                            position="right"
+                            style={{ fill: colorTexto, fontSize: 9, fontFamily: 'monospace', fontWeight: 700 }}
+                            formatter={(v: number) => `${v}%`}
+                          />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Lista resumen */}
+                  <div className="flex flex-col gap-1.5 mt-1">
+                    {datos.map((d, i) => (
+                      <div key={i} className="flex justify-between items-center text-[10px] font-mono py-1 border-b border-zinc-800/40 last:border-0">
+                        <span className="text-zinc-400 truncate max-w-[55%]" title={d.name}>{d.name}</span>
+                        <span className="font-black" style={{ color: colorTexto }}>
+                          ${d.value.toLocaleString()} · {d.pct}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        }
+
+        return (
+          <div className="mt-8">
+            {/* Encabezado de sección */}
+            <div className="mb-6">
+              <h2 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#39FF14] inline-block shadow-[0_0_8px_rgba(57,255,20,0.8)]" />
+                Análisis por Categoría
+              </h2>
+              <p className="text-zinc-500 font-mono text-[10px] uppercase tracking-widest mt-1 ml-4">
+                Distribución de ingresos y egresos del mes seleccionado
+              </p>
+            </div>
+
+            {/* Grid de dos tarjetas */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <TarjetaCategoria
+                titulo="Gastos por Categoría"
+                datos={gastosCat}
+                colorBarra="#ff3939"
+                colorTexto="#ff6b6b"
+                msgVacio="No hay egresos registrados en este periodo."
+              />
+              <TarjetaCategoria
+                titulo="Ingresos por Categoría"
+                datos={ingresosCat}
+                colorBarra="#39FF14"
+                colorTexto="#39FF14"
+                msgVacio="No hay ingresos registrados en este periodo."
+              />
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }

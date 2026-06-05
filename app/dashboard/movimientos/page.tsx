@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { ArrowLeftRight, Plus, Calendar, Search, X, TrendingUp, TrendingDown, Layers, CreditCard, Repeat, Zap } from "lucide-react";
+import { ArrowLeftRight, Plus, Calendar, Search, X, TrendingUp, TrendingDown, Layers, CreditCard, Repeat, Zap, Pencil, Trash2, AlertTriangle } from "lucide-react";
+import ConfirmModal from "@/components/ConfirmModal";
 
 export default function MovimientosPage() {
   const [loading, setLoading] = useState(true);
@@ -25,6 +26,149 @@ export default function MovimientosPage() {
   const [fechaFin, setFechaFin] = useState("");
   
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Buscador en memoria
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // ── Toasts ────────────────────────────────────────────────────────────────
+  const [toasts, setToasts] = useState<{id:number; msg:string; type:'ok'|'err'}[]>([]);
+  let _tid = 0;
+  function toast(msg: string, type: 'ok'|'err' = 'ok') {
+    const id = ++_tid;
+    setToasts(prev => [...prev, { id, msg, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  }
+
+  // ── Estados modal Editar ──────────────────────────────────────────────────
+  const [editMov, setEditMov] = useState<any | null>(null);
+  const [editTipo, setEditTipo] = useState("2");
+  const [editMonto, setEditMonto] = useState("");
+  const [editDescripcion, setEditDescripcion] = useState("");
+  const [editMetodo, setEditMetodo] = useState("Efectivo");
+  const [editCategoria, setEditCategoria] = useState("");
+  const [editFecha, setEditFecha] = useState("");
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+
+  function abrirEditar(mov: any) {
+    setEditMov(mov);
+    setEditTipo(String(mov.id_tipo));
+    setEditMonto(String(mov.monto_transaccion));
+    setEditDescripcion(mov.descripcion_detalle ?? "");
+    setEditMetodo(mov.metodo_pago ?? "Efectivo");
+    setEditCategoria(mov.categorias?.nombre_categoria ?? "");
+    setEditFecha(mov.fecha_operacion.split('T')[0]);
+  }
+
+  const handleActualizar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editMov) return;
+    const montoN = parseFloat(editMonto);
+    if (!editMonto || montoN <= 0) { toast("El monto debe ser mayor que cero.", "err"); return; }
+    if (!editFecha) { toast("La fecha es obligatoria.", "err"); return; }
+    if (!editDescripcion.trim()) { toast("Complete los campos obligatorios.", "err"); return; }
+
+    setIsEditSubmitting(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setIsEditSubmitting(false); return; }
+
+    // Resolver categoría
+    let finalCatId = editMov.id_categoria ?? null;
+    const nombreCat = editCategoria.trim();
+    if (nombreCat) {
+      const existing = categoriasLista.find(
+        c => c.nombre_categoria.toLowerCase() === nombreCat.toLowerCase()
+      );
+      if (existing) {
+        finalCatId = existing.id_categoria;
+      } else {
+        const { data: nc } = await supabase
+          .from('categorias')
+          .insert([{ id_usuario: session.user.id, nombre_categoria: nombreCat }])
+          .select('id_categoria')
+          .single();
+        if (nc) finalCatId = nc.id_categoria;
+      }
+    } else {
+      finalCatId = null;
+    }
+
+    console.log("[Flux] Editando id_movimiento:", editMov.id_movimiento, "| id_usuario:", session.user.id);
+
+    const { data: updatedRow, error } = await supabase
+      .from('movimientos')
+      .update({
+        id_tipo: Number(editTipo),
+        monto_transaccion: montoN,
+        metodo_pago: editMetodo,
+        id_categoria: finalCatId,
+        fecha_operacion: editFecha,
+        descripcion_detalle: editDescripcion.trim(),
+      })
+      .eq('id_movimiento', editMov.id_movimiento)
+      .eq('id_usuario', session.user.id)
+      .select('id_movimiento')
+      .single();
+
+    console.log("[Flux] Resultado UPDATE:", updatedRow, error);
+
+    if (error) {
+      toast("No se pudo actualizar el movimiento.", "err");
+    } else if (!updatedRow) {
+      toast("No se encontró el movimiento o no tienes permiso para actualizarlo.", "err");
+    } else {
+      toast("Movimiento actualizado correctamente.");
+      setEditMov(null);
+      fetchData();
+    }
+    setIsEditSubmitting(false);
+  };
+
+  // ── Estados modal de confirmación (reemplaza window.confirm) ────────────────
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingMov, setPendingMov] = useState<any | null>(null);
+
+  // Paso 1: pide confirmación visual (sin ejecutar nada todavía)
+  const handleEliminar = (mov: any) => {
+    setPendingMov(mov);
+    setConfirmOpen(true);
+  };
+
+  // Paso 2: usuario confirmó → ejecutar DELETE real
+  const confirmarEliminar = async () => {
+    setConfirmOpen(false);
+    if (!pendingMov) return;
+    const mov = pendingMov;
+    setPendingMov(null);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    console.log("[Flux] Eliminando id_movimiento:", mov.id_movimiento, "| id_usuario:", session.user.id);
+
+    const { data: deletedRows, error } = await supabase
+      .from('movimientos')
+      .delete()
+      .eq('id_movimiento', mov.id_movimiento)
+      .eq('id_usuario', session.user.id)
+      .select('id_movimiento');
+
+    console.log("[Flux] Resultado DELETE:", deletedRows, error);
+
+    if (error) {
+      toast("No se pudo eliminar el movimiento.", "err");
+    } else if (!deletedRows || deletedRows.length === 0) {
+      toast("No se encontró el movimiento o no tienes permiso para eliminarlo.", "err");
+    } else {
+      toast("Movimiento eliminado correctamente.");
+      fetchData();
+    }
+  };
+
+  // Paso 3: usuario canceló
+  const cancelarEliminar = () => {
+    setConfirmOpen(false);
+    setPendingMov(null);
+  };
 
   // Funciones de carga
   const fetchData = async () => {
@@ -169,13 +313,48 @@ export default function MovimientosPage() {
       {/* Panel de Comandos */}
       <div className="bg-[#09090b] border border-zinc-800/50 p-4 rounded-2xl flex flex-col xl:flex-row gap-4 mb-6 shadow-2xl relative overflow-hidden group">
         <div className="absolute top-0 left-0 w-1 h-full bg-zinc-800 group-hover:bg-[#39FF14] transition-colors duration-500"></div>
-        <div className="flex-1 relative pl-2">
-          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-          <input 
-            type="text" 
-            placeholder="BUSCAR OPERACIÓN..." 
-            className="w-full bg-zinc-900/50 border border-zinc-800 text-white text-xs font-mono tracking-wider px-12 py-3.5 rounded-xl focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all placeholder-zinc-600 shadow-inner"
-          />
+        <div className="flex-1 relative pl-2 flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="BUSCAR OPERACIÓN..."
+              className="w-full bg-zinc-900/50 border border-zinc-800 text-white text-xs font-mono tracking-wider px-12 py-3.5 rounded-xl focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all placeholder-zinc-600 shadow-inner"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm("")}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors"
+                title="Limpiar búsqueda"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+          {/* Contador de resultados */}
+          <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest whitespace-nowrap shrink-0">
+            {searchTerm
+              ? `${movimientos.filter((mov) => {
+                  const q = searchTerm.toLowerCase().trim();
+                  const categoria = mov.categorias?.nombre_categoria ?? "";
+                  const descripcion = mov.descripcion_detalle ?? "";
+                  const metodo = mov.metodo_pago ?? "";
+                  const monto = String(mov.monto_transaccion ?? "");
+                  const fecha = mov.fecha_operacion ?? "";
+                  const tipo = mov.id_tipo === 1 ? "ingreso" : "egreso";
+                  return (
+                    categoria.toLowerCase().includes(q) ||
+                    descripcion.toLowerCase().includes(q) ||
+                    metodo.toLowerCase().includes(q) ||
+                    monto.includes(q) ||
+                    fecha.includes(q) ||
+                    tipo.includes(q)
+                  );
+                }).length} resultado(s)`
+              : `${movimientos.length} registro(s)`}
+          </span>
         </div>
       </div>
 
@@ -196,7 +375,45 @@ export default function MovimientosPage() {
             <span className="font-mono text-sm tracking-widest uppercase text-zinc-600">No hay registros activos</span>
             <span className="font-mono text-[9px] tracking-widest">Inyecta un nuevo registro para iniciar estadística</span>
           </div>
-        ) : (
+        ) : (() => {
+          // Filtrado en memoria — no genera nuevas consultas a Supabase
+          const q = searchTerm.toLowerCase().trim();
+          const filteredMovimientos = q
+            ? movimientos.filter((mov) => {
+                const categoria  = mov.categorias?.nombre_categoria ?? "";
+                const descripcion = mov.descripcion_detalle ?? "";
+                const metodo     = mov.metodo_pago ?? "";
+                const monto      = String(mov.monto_transaccion ?? "");
+                const fecha      = mov.fecha_operacion ?? "";
+                const tipo       = mov.id_tipo === 1 ? "ingreso" : "egreso";
+                return (
+                  categoria.toLowerCase().includes(q) ||
+                  descripcion.toLowerCase().includes(q) ||
+                  metodo.toLowerCase().includes(q) ||
+                  monto.includes(q) ||
+                  fecha.includes(q) ||
+                  tipo.includes(q)
+                );
+              })
+            : movimientos;
+
+          if (filteredMovimientos.length === 0) {
+            return (
+              <div className="flex-1 flex flex-col items-center justify-center p-20 gap-2 text-zinc-500 bg-zinc-900/10">
+                <Search size={28} className="text-zinc-700 mb-2" />
+                <span className="font-mono text-sm tracking-widest uppercase text-zinc-600">Sin resultados</span>
+                <span className="font-mono text-[9px] tracking-widest">No se encontraron operaciones para esta búsqueda.</span>
+                <button
+                  onClick={() => setSearchTerm("")}
+                  className="mt-4 text-[10px] font-bold text-[#39FF14] uppercase tracking-widest hover:text-white transition-colors"
+                >
+                  Limpiar búsqueda
+                </button>
+              </div>
+            );
+          }
+
+          return (
           <div className="w-full overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -204,11 +421,12 @@ export default function MovimientosPage() {
                   <th className="p-4 pl-6 w-32">Fecha</th>
                   <th className="p-4 min-w-[200px]">Detalle / Categoría</th>
                   <th className="p-4 w-40">Método / Ref</th>
-                  <th className="p-4 text-right pr-6 w-40">Monto</th>
+                  <th className="p-4 text-right w-40">Monto</th>
+                  <th className="p-4 text-center w-28">Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {movimientos.map((mov) => {
+                {filteredMovimientos.map((mov) => {
                   const [year, month, day] = mov.fecha_operacion.split('T')[0].split('-');
                   const fechaOp = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
                   const fecha = fechaOp.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
@@ -238,8 +456,27 @@ export default function MovimientosPage() {
                       <td className="p-4 font-mono text-[10px] text-zinc-400">
                         {mov.metodo_pago || 'Desconocido'}
                       </td>
-                      <td className={`p-4 pr-6 text-right font-mono font-bold tracking-tight text-lg ${isIngreso ? 'text-[#39FF14]' : 'text-white'}`}>
+                      <td className={`p-4 text-right font-mono font-bold tracking-tight text-lg ${isIngreso ? 'text-[#39FF14]' : 'text-white'}`}>
                         {isIngreso ? '+' : '-'}${mov.monto_transaccion.toLocaleString()}
+                      </td>
+                      {/* Columna Acciones */}
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                          <button
+                            onClick={() => abrirEditar(mov)}
+                            title="Editar movimiento"
+                            className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-all"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            onClick={() => handleEliminar(mov)}
+                            title="Eliminar movimiento"
+                            className="p-1.5 rounded-lg bg-[#ff3939]/10 hover:bg-[#ff3939]/20 text-[#ff3939] border border-[#ff3939]/20 hover:border-[#ff3939]/40 transition-all"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -247,7 +484,8 @@ export default function MovimientosPage() {
               </tbody>
             </table>
           </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* 🚀 Modal / Ventana Flotante Avanzada para Nuevo Registro */}
@@ -395,7 +633,134 @@ export default function MovimientosPage() {
           </div>
         </div>
       )}
-      
+
+      {/* ── Toasts ── */}
+      <div className="fixed top-6 right-6 z-[200] flex flex-col gap-2 pointer-events-none">
+        {toasts.map(t => (
+          <div key={t.id} className={`px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest shadow-2xl border pointer-events-auto animate-in fade-in slide-in-from-right-4 duration-300 ${
+            t.type === 'ok'
+              ? 'bg-[#09090b] border-[#39FF14]/40 text-[#39FF14]'
+              : 'bg-[#09090b] border-[#ff3939]/40 text-[#ff3939]'
+          }`}>{t.msg}</div>
+        ))}
+      </div>
+
+      {/* ════════════════════════════════════════
+          MODAL — Editar Movimiento
+      ════════════════════════════════════════ */}
+      {editMov && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-[#09090b] border border-zinc-800 rounded-3xl p-6 w-full max-w-sm shadow-[0_0_50px_rgba(57,255,20,0.1)] relative max-h-[90vh] overflow-y-auto">
+            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#39FF14]/40 to-transparent" />
+            <button onClick={() => setEditMov(null)} className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors">
+              <X size={20} />
+            </button>
+
+            <h2 className="text-lg font-black text-white uppercase tracking-widest mb-1 border-b border-zinc-800 pb-4 flex items-center gap-2">
+              <Pencil size={16} className="text-[#39FF14]" /> Editar Operación
+            </h2>
+
+            {/* Advertencia movimiento automático */}
+            {editMov.es_automatico && (
+              <div className="flex items-start gap-2 bg-yellow-400/5 border border-yellow-400/20 rounded-xl p-3 mb-4 mt-4">
+                <AlertTriangle size={14} className="text-yellow-400 shrink-0 mt-0.5" />
+                <p className="text-[10px] text-yellow-400/80 font-mono tracking-widest leading-relaxed">
+                  Movimiento automático: este cambio no modifica la regla recurrente.
+                </p>
+              </div>
+            )}
+
+            <form onSubmit={handleActualizar} className="flex flex-col gap-4 mt-4">
+              {/* Tipo */}
+              <div className="flex bg-zinc-900 rounded-xl p-1 border border-zinc-800 gap-1">
+                <button type="button" onClick={() => setEditTipo("1")}
+                  className={`flex-1 py-2.5 text-[10px] font-black tracking-widest uppercase rounded-lg transition-all ${
+                    editTipo === "1" ? "bg-[#39FF14] text-black shadow-[0_0_15px_rgba(57,255,20,0.2)]" : "text-zinc-500 hover:text-zinc-300"
+                  }`}>
+                  Ingreso (+)
+                </button>
+                <button type="button" onClick={() => setEditTipo("2")}
+                  className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                    editTipo === "2" ? "bg-[#ff3939] text-white shadow-[0_0_15px_rgba(255,57,57,0.2)]" : "text-zinc-500 hover:text-zinc-300"
+                  }`}>
+                  Egreso (-)
+                </button>
+              </div>
+
+              {/* Monto */}
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Monto *</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 font-bold">$</span>
+                  <input type="number" step="0.01" required value={editMonto} onChange={e => setEditMonto(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-10 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all font-mono font-bold"
+                    placeholder="0.00" />
+                </div>
+              </div>
+
+              {/* Método y Categoría */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1 flex items-center gap-1"><CreditCard size={12}/> Método</label>
+                  <select value={editMetodo} onChange={e => setEditMetodo(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all text-xs">
+                    <option value="Efectivo">Efectivo 💵</option>
+                    <option value="Transferencia">Transferencia 🏦</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1 flex items-center gap-1"><Layers size={12}/> Categoría</label>
+                  <input type="text" value={editCategoria} onChange={e => setEditCategoria(e.target.value)}
+                    list="edit-categorias-list" placeholder="Ej: Mesada"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all text-xs" />
+                  <datalist id="edit-categorias-list">
+                    {categoriasLista.map(cat => (
+                      <option key={cat.id_categoria} value={cat.nombre_categoria} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+
+              {/* Fecha y Descripción */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Fecha *</label>
+                  <input type="date" required value={editFecha} onChange={e => setEditFecha(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#39FF14] transition-all font-medium text-xs [color-scheme:dark]" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Descripción *</label>
+                  <input type="text" required value={editDescripcion} onChange={e => setEditDescripcion(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#39FF14] transition-all font-medium text-sm placeholder-zinc-600"
+                    placeholder="Ej: Salario" />
+                </div>
+              </div>
+
+              <button type="submit" disabled={isEditSubmitting}
+                className="w-full bg-[#39FF14] text-black font-black uppercase tracking-widest text-xs py-4 mt-2 rounded-xl hover:bg-[#a3e635] hover:shadow-[0_0_20px_rgba(57,255,20,0.4)] transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                {isEditSubmitting ? "ACTUALIZANDO..." : "GUARDAR CAMBIOS"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal de Confirmación de Eliminación ══ */}
+      <ConfirmModal
+        open={confirmOpen}
+        title={pendingMov?.es_automatico ? "Eliminar movimiento automático" : "Eliminar movimiento"}
+        message={
+          pendingMov?.es_automatico
+            ? "Este movimiento fue generado automáticamente. Si lo eliminas, solo se eliminará este registro puntual. La regla recurrente seguirá activa."
+            : "¿Seguro que deseas eliminar este movimiento? Esta acción no se puede deshacer."
+        }
+        confirmText="Sí, eliminar"
+        cancelText="Cancelar"
+        confirmVariant="danger"
+        onConfirm={confirmarEliminar}
+        onCancel={cancelarEliminar}
+      />
+
     </div>
   );
 }

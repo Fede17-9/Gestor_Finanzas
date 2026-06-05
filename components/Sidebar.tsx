@@ -9,7 +9,8 @@ import {
   Calendar,
   Settings,
   LogOut,
-  Infinity
+  Infinity,
+  Repeat
 } from 'lucide-react';
 
 const menuItems = [
@@ -17,6 +18,7 @@ const menuItems = [
   { name: 'Movimientos', icon: ArrowLeftRight, href: '/dashboard/movimientos' },
   { name: 'Calendario', icon: Calendar, href: '/dashboard/calendario' },
   { name: 'Metas', icon: Target, href: '/dashboard/metas' },
+  { name: 'Recurrencias', icon: Repeat, href: '/dashboard/recurrencias' },
   { name: 'Configuración', icon: Settings, href: '/dashboard/configuracion' },
 ];
 
