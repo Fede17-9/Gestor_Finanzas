@@ -1,0 +1,120 @@
+import type { SupabaseClient, User } from '@supabase/supabase-js';
+
+export interface ProfileInput {
+  nombre_completo: string;
+  username: string;
+  codigo_moneda: string;
+  url_avatar: string | null;
+}
+
+export function validateProfile(input: ProfileInput): ProfileInput {
+  const nombre = input.nombre_completo.trim();
+  const username = input.username.trim();
+  if (!nombre || nombre.length > 120) throw new Error('Escribe tu nombre, con un máximo de 120 caracteres.');
+  if (username.length < 3 || username.length > 32) throw new Error('El alias debe tener entre 3 y 32 caracteres.');
+  if (!['COP','USD','EUR'].includes(input.codigo_moneda)) throw new Error('Selecciona una moneda válida.');
+  if (input.url_avatar && !/^https:\/\/api\.dicebear\.com\/9\.x\/fun-emoji\/svg\?seed=[A-Za-z]+$/.test(input.url_avatar)) {
+    throw new Error('Selecciona uno de los avatares disponibles.');
+  }
+  return { nombre_completo: nombre, username, codigo_moneda: input.codigo_moneda, url_avatar: input.url_avatar };
+}
+
+export function validatePassword(password: string): void {
+  if (password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres.');
+  if (password.length > 128) throw new Error('La contraseña no puede superar 128 caracteres.');
+}
+
+export function authRedirect(origin: string, next: '/dashboard' | '/actualizar-clave' = '/dashboard'): string {
+  const url = new URL('/auth/callback', origin);
+  url.searchParams.set('next', next);
+  return url.href;
+}
+
+export async function verifiedUser(client: SupabaseClient): Promise<User | null> {
+  const { data, error } = await client.auth.getUser();
+  if (error) {
+    if (error.name === 'AuthSessionMissingError' || error.status === 401 || error.status === 403) return null;
+    throw new Error('No se pudo comprobar tu sesión. Revisa la conexión e intenta de nuevo.');
+  }
+  return data.user;
+}
+
+export async function hasProfile(client: SupabaseClient, userId: string): Promise<boolean> {
+  const { data, error } = await client.from('usuarios').select('id_usuario').eq('id_usuario', userId).maybeSingle();
+  if (error) throw new Error('No se pudo consultar tu perfil. Revisa la conexión y los permisos de Supabase.');
+  return Boolean(data);
+}
+
+export async function createOwnProfile(client: SupabaseClient, input: ProfileInput): Promise<void> {
+  const profile = validateProfile(input);
+  const user = await verifiedUser(client);
+  if (!user) throw new Error('Inicia sesión antes de completar tu perfil.');
+  // An existing profile is never overwritten using mutable Auth metadata.
+  if (await hasProfile(client, user.id)) return;
+  const { error } = await client.from('usuarios').insert({ ...profile, id_usuario: user.id });
+  if (error) {
+    if (error.code === '23505') {
+      if (await hasProfile(client, user.id)) return; // Same-user concurrent completion.
+      throw new Error('Ese alias ya está en uso. Elige otro.');
+    }
+    throw new Error('No se pudo guardar tu perfil. Intenta de nuevo; tu cuenta se conserva.');
+  }
+}
+
+export async function accountDestination(client: SupabaseClient): Promise<'/dashboard' | '/completar-perfil' | '/login'> {
+  const user = await verifiedUser(client);
+  if (!user) return '/login';
+  return await hasProfile(client, user.id) ? '/dashboard' : '/completar-perfil';
+}
+
+export async function initializeMetadataProfile(client: SupabaseClient): Promise<string> {
+  const user = await verifiedUser(client);
+  if (!user) return '/login';
+  if (await hasProfile(client, user.id)) return '/dashboard';
+  const metadata = user.user_metadata;
+  let input: ProfileInput;
+  try {
+    input = validateProfile({
+      nombre_completo: String(metadata.nombre_completo ?? ''), username: String(metadata.username ?? ''),
+      codigo_moneda: String(metadata.codigo_moneda ?? ''), url_avatar: typeof metadata.url_avatar === 'string' ? metadata.url_avatar : null,
+    });
+  } catch { return '/completar-perfil'; }
+  try { await createOwnProfile(client, input); return '/dashboard'; }
+  catch { return '/completar-perfil'; }
+}
+
+export async function registerAccount(client: SupabaseClient, email: string, password: string, input: ProfileInput, origin: string) {
+  const profile = validateProfile(input);
+  validatePassword(password);
+  const { data, error } = await client.auth.signUp({
+    email: email.trim(), password,
+    options: { data: profile, emailRedirectTo: authRedirect(origin) },
+  });
+  if (error) throw new Error(error.message);
+  // With Confirm email enabled there is no session yet: no public table INSERT.
+  if (!data.session) return { confirmationRequired: true, destination: null };
+  return { confirmationRequired: false, destination: await initializeMetadataProfile(client) };
+}
+
+export async function completeAuthLink(client: SupabaseClient, href: string) {
+  const url = new URL(href);
+  const hash = new URLSearchParams(url.hash.slice(1));
+  if (url.searchParams.has('error') || hash.has('error')) throw new Error('El enlace venció o no es válido. Solicita uno nuevo.');
+  let recovery = hash.get('type') === 'recovery';
+  const code = url.searchParams.get('code');
+  if (code) {
+    const { data, error } = await client.auth.exchangeCodeForSession(code);
+    if (error) throw new Error('No se pudo verificar el enlace. Ábrelo en el navegador donde lo solicitaste o pide otro.');
+    const redirectType = 'redirectType' in data ? data.redirectType : null;
+    recovery = redirectType === 'PASSWORD_RECOVERY' || redirectType === 'recovery';
+  } else {
+    // Accept old implicit-flow links while newly issued links use PKCE.
+    const access_token = hash.get('access_token'), refresh_token = hash.get('refresh_token');
+    if (!access_token || !refresh_token) throw new Error('Falta el código del enlace. Solicita uno nuevo.');
+    const { error } = await client.auth.setSession({ access_token, refresh_token });
+    if (error) throw new Error('El enlace no es válido o ya venció.');
+  }
+  const user = await verifiedUser(client);
+  if (!user) throw new Error('No se pudo verificar la identidad del enlace.');
+  return { userId: user.id, destination: recovery ? '/actualizar-clave' : await initializeMetadataProfile(client) };
+}

@@ -1,32 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Infinity } from "lucide-react";
+import { initializeMetadataProfile } from '@/lib/auth';
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const lock = useRef(false);
   const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      alert("Error al iniciar sesión: " + error.message);
-      setLoading(false);
-    } else {
-      router.push("/dashboard");
-    }
+    if (lock.current) return;
+    lock.current = true; setLoading(true); setError('');
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) throw new Error(error.code === 'email_not_confirmed' ? 'Confirma tu correo antes de entrar.' : 'No se pudo iniciar sesión. Revisa el correo y la contraseña.');
+      router.replace(await initializeMetadataProfile(supabase));
+    } catch (error) { setError(error instanceof Error ? error.message : 'No se pudo iniciar sesión.'); }
+    finally { lock.current = false; setLoading(false); }
   };
 
   const inputStyles = "w-full border border-zinc-800 px-4 py-3 text-sm text-white bg-zinc-900 rounded-xl focus:outline-none focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] placeholder-zinc-600 transition-all";
@@ -55,6 +53,7 @@ export default function LoginPage() {
             <label className={labelStyles}>Identificador (Email)</label>
             <input 
               type="email" 
+              autoComplete="email"
               placeholder="agente@flux.net" 
               onChange={(e) => setEmail(e.target.value)} 
               className={inputStyles} 
@@ -66,6 +65,7 @@ export default function LoginPage() {
             <label className={labelStyles}>Clave de Acceso</label>
             <input 
               type="password" 
+              autoComplete="current-password"
               placeholder="••••••••" 
               onChange={(e) => setPassword(e.target.value)} 
               className={inputStyles} 
@@ -82,6 +82,8 @@ export default function LoginPage() {
           </button>
         </form>
 
+        {error && <p role="alert" className="text-red-300 text-sm">{error}</p>}
+        <Link href="/recuperar-clave" className="text-sm text-zinc-400 underline">Olvidé mi contraseña</Link>
         <p className="text-center text-xs font-semibold text-zinc-500 uppercase tracking-widest">
           ¿NUEVO USUARIO? <Link href="/registro" className="text-[#39FF14] hover:text-white transition-colors">REGÍSTRATE</Link>
         </p>

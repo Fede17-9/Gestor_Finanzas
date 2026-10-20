@@ -1,10 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { supabase } from "@/lib/supabase"; 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Infinity } from "lucide-react";
 import Image from 'next/image';
+import { registerAccount } from '@/lib/auth';
 
 // Lista de Avatares sencillos
 const AVATARS = [
@@ -25,40 +26,24 @@ export default function RegistroPage() {
   const [avatar, setAvatar] = useState(AVATARS[0]);
   
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const lock = useRef(false);
   const router = useRouter();
 
   const handleRegistro = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-
-    if (authError) {
-      setLoading(false);
-      return alert(authError.message);
-    }
-
-    if (authData.user) {
-      const { error: dbError } = await supabase.from("usuarios").insert([
-        {
-          id_usuario: authData.user.id,
-          nombre_completo: nombre, // Nombre Completo
-          username: username,     // Apodo
-          codigo_moneda: moneda,
-          url_avatar: avatar      // Avatar URL
-        },
-      ]);
-
-      if (dbError) {
-        alert("Error al guardar perfil: " + dbError.message);
-      } else {
-        router.push("/dashboard");
-      }
-    }
-    setLoading(false);
+    if (lock.current) return;
+    lock.current = true; setLoading(true); setError(''); setMessage('');
+    try {
+      const result = await registerAccount(supabase, email, password, {
+        nombre_completo: nombre, username, codigo_moneda: moneda, url_avatar: avatar,
+      }, window.location.origin);
+      if (result.confirmationRequired) {
+        setMessage('Revisa tu correo para confirmar la cuenta. Abre el enlace en este mismo navegador.');
+      } else if (result.destination) router.replace(result.destination);
+    } catch (error) { setError(error instanceof Error ? error.message : 'No se pudo crear la cuenta.'); }
+    finally { lock.current = false; setLoading(false); }
   };
 
   const inputStyles = "w-full border border-zinc-800 px-4 py-3 text-sm text-white bg-zinc-900 rounded-xl focus:outline-none focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] placeholder-zinc-600 transition-all";
@@ -103,13 +88,13 @@ export default function RegistroPage() {
 
         <div>
           <label className={labelStyles}>Identidad Real (Nombre Completo)</label>
-          <input type="text" placeholder="Ej: John Doe" 
+          <input type="text" maxLength={120} placeholder="Ej: John Doe"
                  onChange={(e) => setNombre(e.target.value)} className={inputStyles} required />
         </div>
         
         <div>
           <label className={labelStyles}>Alias Operativo (Apodo)</label>
-          <input type="text" placeholder="Ej: Neo" 
+          <input type="text" minLength={3} maxLength={32} placeholder="Ej: Neo"
                  onChange={(e) => setUsername(e.target.value)} className={inputStyles} required />
         </div>
 
@@ -130,7 +115,7 @@ export default function RegistroPage() {
 
         <div>
           <label className={labelStyles}>Clave Encriptada</label>
-          <input type="password" placeholder="••••••••" 
+          <input type="password" autoComplete="new-password" minLength={8} maxLength={128} placeholder="••••••••"
                  onChange={(e) => setPassword(e.target.value)} className={inputStyles} required />
         </div>
 
@@ -138,6 +123,8 @@ export default function RegistroPage() {
           {loading ? "CREANDO PERFIL..." : "REGISTRAR Y SINCRONIZAR"}
         </button>
 
+        {error && <p role="alert" className="text-red-300 text-sm">{error}</p>}
+        {message && <p role="status" className="text-emerald-300 text-sm">{message}</p>}
         <p className="text-center text-xs font-semibold text-zinc-500 uppercase tracking-widest mt-2">
           ¿YA TIENES ACCESO? <Link href="/login" className="text-[#39FF14] hover:text-white transition-colors">INICIAR SESIÓN</Link>
         </p>

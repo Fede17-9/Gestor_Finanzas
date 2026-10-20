@@ -52,33 +52,42 @@ export default function MovimientosPage() {
   }
 
   const fetchData = useCallback(async () => {
-    try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) throw new Error('No se pudo comprobar tu sesión.');
-      if (!session) { router.replace('/login'); setLoading(false); return; }
-      setLoading(true);
-      setLoadError('');
-      const [movements, profile, categories] = await Promise.all([
-        reader.movements(session.user.id), reader.profile(session.user.id),
-        readAllPages(async (from, to) => {
-          const { data, error } = await supabase.from('categorias').select('id_categoria, nombre_categoria')
-            .or('id_usuario.eq.' + session.user.id + ',id_usuario.is.null')
-            .order('id_categoria', { ascending: true }).range(from, to).returns<Category[]>();
-          if (error || !data) throw new Error('No se pudieron cargar las categorías.');
-          return data;
-        }),
-      ]);
-      setMovimientos(movements);
-      setCurrency(profile.codigo_moneda);
-      setCategoriasLista(categories);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar los movimientos.');
-    } finally {
-      setLoading(false);
-    }
-  }, [router]);
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error || !session) throw new Error('No se pudo comprobar tu sesión. Vuelve a iniciar sesión.');
+    const [movements, profile, categories] = await Promise.all([
+      reader.movements(session.user.id), reader.profile(session.user.id),
+      readAllPages(async (from, to) => {
+        const { data, error } = await supabase.from('categorias').select('id_categoria, nombre_categoria')
+          .or('id_usuario.eq.' + session.user.id + ',id_usuario.is.null')
+          .order('id_categoria', { ascending: true }).range(from, to).returns<Category[]>();
+        if (error || !data) throw new Error('No se pudieron cargar las categorías.');
+        return data;
+      }),
+    ]);
+    return { movements, profile, categories };
+  }, []);
 
-  useEffect(() => { void fetchData(); }, [fetchData]);
+  const applyData = useCallback((snapshot: Awaited<ReturnType<typeof fetchData>>) => {
+    setMovimientos(snapshot.movements);
+    setCurrency(snapshot.profile.codigo_moneda);
+    setCategoriasLista(snapshot.categories);
+    setLoadError('');
+  }, []);
+
+  async function refreshData() {
+    setLoading(true);
+    try { applyData(await fetchData()); }
+    catch (error) { setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar los movimientos.'); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => {
+    let active = true;
+    fetchData().then(snapshot => { if (active) applyData(snapshot); })
+      .catch(error => { if (active) setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar los movimientos.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [fetchData, applyData]);
 
   async function resolveCategory(name: string, userId: string): Promise<string | null> {
     const trimmed = name.trim();
@@ -127,7 +136,7 @@ export default function MovimientosPage() {
       if (error || !data) throw new Error('No se pudo actualizar el movimiento. Comprueba tus permisos.');
       setEditMov(null);
       toast('Movimiento actualizado.');
-      await fetchData();
+      await refreshData();
     } catch (error) {
       toast(error instanceof Error ? error.message : 'No se pudo actualizar el movimiento.', 'err');
     } finally {
@@ -154,7 +163,7 @@ export default function MovimientosPage() {
         .eq('id_movimiento', movement.id_movimiento).eq('id_usuario', session.user.id).select('id_movimiento');
       if (error || !data?.length) throw new Error('No se pudo eliminar el movimiento. Comprueba tus permisos.');
       toast('Movimiento eliminado.');
-      await fetchData();
+      await refreshData();
     } catch (error) {
       toast(error instanceof Error ? error.message : 'No se pudo eliminar el movimiento.', 'err');
     } finally {
@@ -206,7 +215,7 @@ export default function MovimientosPage() {
       setDiaEjecucion('1'); setFechaFin('');
       toast(recurrenceFailed ? 'El movimiento se guardó, pero la regla no pudo crearse. No repitas el movimiento.' : 'Movimiento guardado.',
         recurrenceFailed ? 'err' : 'ok');
-      await fetchData();
+      await refreshData();
     } catch (error) {
       toast(error instanceof Error ? error.message : 'No se pudo guardar el movimiento.', 'err');
     } finally {
@@ -219,7 +228,7 @@ export default function MovimientosPage() {
     <div className="max-w-7xl mx-auto pb-10 animate-in fade-in duration-500 relative">
 
       {loadError && <div role="alert" className="mb-4 p-4 text-red-300 border border-red-400/30 rounded-xl">
-        {loadError}<button className="block underline mt-2" onClick={() => void fetchData()}>Volver a cargar</button>
+        {loadError}<button className="block underline mt-2" onClick={() => void refreshData()}>Volver a cargar</button>
       </div>}
       {/* Header de Interfaz */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">

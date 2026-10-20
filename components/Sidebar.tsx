@@ -1,5 +1,6 @@
 "use client";
 import Link from 'next/link';
+import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
@@ -25,10 +26,18 @@ const menuItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [logoutError, setLogoutError] = useState('');
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
+    if (loggingOut) return;
+    setLoggingOut(true); setLogoutError('');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      router.replace('/login');
+    } catch { setLogoutError('No se pudo cerrar la sesión. Intenta de nuevo.'); }
+    finally { setLoggingOut(false); }
   };
 
   return (
@@ -65,11 +74,13 @@ export default function Sidebar() {
       <div className="p-4">
         <button
           onClick={handleLogout}
+          disabled={loggingOut}
           className="flex items-center gap-3 px-4 py-3 w-full text-zinc-500 hover:text-[#ff3939] hover:bg-[#ff3939]/10 rounded-xl transition-all duration-300 group"
         >
           <LogOut size={20} className="group-hover:scale-110 transition-transform" />
           <span className="font-medium text-sm">Cerrar sesión</span>
         </button>
+        {logoutError && <p role="alert" className="text-xs text-red-300 p-3">{logoutError}</p>}
       </div>
     </aside>
   );
