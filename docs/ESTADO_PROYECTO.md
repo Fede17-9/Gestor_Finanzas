@@ -1,5 +1,7 @@
 # Estado del proyecto Flux / Gestor de Finanzas
 
+> **Fotografía de la auditoría inicial.** Los hallazgos y líneas de este documento describen el código previo a las correcciones. La primera entrega retiró las escrituras del dashboard, corrigió los cálculos/proyecciones y dejó checks en verde. Consultar [ETAPA_1.md](ETAPA_1.md) y [validación actual](VALIDACION.md) para el estado vigente. Supabase ya está integrado; la revisión remota sigue pendiente.
+
 Fecha de corte: **20 de octubre de 2026**, zona horaria de referencia: **America/Bogota**.
 
 Este diagnóstico describe el código local revisado y los resultados de validación disponibles en esta fecha. No se inspeccionó la base de datos remota, no se abrió una sesión con datos personales y no se modificó el código de la aplicación. Las referencias de líneas corresponden al estado auditado, antes de corregir los problemas descritos.

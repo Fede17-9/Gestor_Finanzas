@@ -6,18 +6,19 @@ El proyecto está en fase de **MVP en desarrollo**. El objetivo es terminar un r
 
 ## Estado al 20 de octubre de 2026
 
-Ya existen registro e inicio de sesión, dashboard con métricas y gráficos, creación y edición de movimientos, calendario, gestión de recurrencias, metas de ahorro y configuración del perfil. Estas pantallas consultan y modifican datos de Supabase.
+Supabase **ya está integrado** para autenticación y datos. La primera entrega de integridad/compilación está implementada en la aplicación:
 
-La aplicación todavía requiere correcciones antes de usarse como registro financiero principal o publicarse:
+- Dashboard y calendario consultan datos sin crear ni borrar movimientos al cargar.
+- Los gastos legítimos con igual categoría/importe/fecha se conservan.
+- Importes calculados en centavos y validados; fecha «hoy» de Bogotá; proyecciones con vigencia y frecuencias coherentes.
+- Historial paginado y errores visibles, sin presentar totales parciales como si fueran completos.
+- **22 pruebas, TypeScript, lint sin errores/advertencias y build aprobados.**
 
-- **Riesgo de pérdida de datos:** cargar el dashboard puede ejecutar un `DELETE` para eliminar supuestos movimientos automáticos duplicados. La coincidencia por fecha y categoría puede borrar operaciones legítimas. Debe retirarse o sustituirse antes de usar datos reales.
-- Las recurrencias no tienen una identidad de ejecución que evite duplicados de forma fiable; la frecuencia anual, las fechas límite, las pausas y las zonas horarias tienen inconsistencias.
-- Las metas son contadores manuales; cambiar la moneda del perfil no convierte el historial. Presupuestos, cuentas y tarjetas no son módulos terminados.
-- TypeScript y la compilación de producción fallan. ESLint reportó **26 errores y 9 advertencias**. No hay una versión de producción validada.
-- No se verificaron las políticas de seguridad ni el esquema de la base remota. El SQL de referencia todavía no constituye una migración segura y reproducible.
-- La ruta `/` sigue mostrando la plantilla de Next.js. La presentación pública y la experiencia móvil están pendientes.
+El registro automático anterior se retiró. Las reglas se muestran como proyecciones separadas de las operaciones registradas; las ocurrencias pendientes y confirmaciones configurables se construirán en la etapa 3.
 
-El diagnóstico completo, con alcance y evidencias, está en [Estado del proyecto](docs/ESTADO_PROYECTO.md) y [Validación técnica](docs/VALIDACION.md). No se probaron operaciones con datos personales durante la auditoría.
+Aún faltan restricciones/migraciones y comprobación de RLS en Supabase remoto, presupuestos, historial de aportes a metas, presentación móvil y beta. Cambiar la moneda sin conversión está bloqueado; se selecciona al registrarse. La portada `/` sigue siendo la plantilla de Next.js.
+
+Consulta [primera entrega y límites](docs/ETAPA_1.md) y [validación actual](docs/VALIDACION.md). El [diagnóstico inicial](docs/ESTADO_PROYECTO.md) se conserva como fotografía anterior a las correcciones. Ningún dato remoto se modificó durante esta implementación.
 
 ## Tecnología
 
@@ -26,11 +27,11 @@ El diagnóstico completo, con alcance y evidencias, está en [Estado del proyect
 - Supabase Auth y PostgreSQL; acceso desde el navegador mediante `lib/supabase.ts`.
 - Recharts para gráficos y Lucide para iconos.
 
-El entorno auditado utilizó Node.js **24.19**. El proyecto todavía no fija una versión mediante `engines`; debe definirse y validarse antes de establecer el entorno de CI y despliegue. Las dependencias y los scripts están en [package.json](package.json); `package-lock.json` registra su resolución.
+El proyecto requiere **Node.js 24.x**, declarado en `engines` y `.nvmrc`; se validó con 24.19.0. Las pruebas usan el runner nativo de Node, sin nuevas dependencias. Versiones y scripts en [package.json](package.json), resolución en `package-lock.json`.
 
 ## Ejecutar en local
 
-Usa un proyecto Supabase de pruebas y datos ficticios. El dashboard realiza escrituras al cargar y conserva el riesgo de borrado descrito arriba.
+Conserva la configuración de tu Supabase existente. Para verificar cambios de esquema y envíos de formularios, usa un entorno de pruebas con datos ficticios. Dashboard y calendario son de solo lectura; crear, editar o eliminar desde formularios sigue modificando el Supabase configurado.
 
 Desde la raíz del repositorio, donde está `package.json`, instala las dependencias y crea el archivo local de configuración solo si todavía no existe:
 
@@ -65,29 +66,31 @@ Abre [http://localhost:3000/login](http://localhost:3000/login) o [http://localh
 Desde la raíz del repositorio:
 
 ```powershell
+npm test
+npm run typecheck
 npm run lint
-npx tsc --noEmit --incremental false
 npm run build
 ```
 
-**Las tres comprobaciones fallan en el estado auditado.** Lint reportó 26 errores y 9 advertencias; TypeScript presenta errores en calendario y dashboard, que también bloquean la compilación. Consulta [Validación técnica](docs/VALIDACION.md) para el detalle. El siguiente ciclo debe resolverlos antes de activar comprobaciones obligatorias en las pull requests.
+**Las cuatro comprobaciones pasan en esta entrega.** El build descarga las fuentes Geist y necesita acceso de red. También se comprobó el arranque de producción y HTTP 200 en las nueve rutas. Esto no certifica RLS ni los formularios contra la base real; consulta [validación y límites](docs/VALIDACION.md).
 
 ## Documentación y continuación
 
-- [Estado del proyecto](docs/ESTADO_PROYECTO.md): arquitectura, pantallas reales, base documentada y problemas priorizados.
+- [Primera entrega](docs/ETAPA_1.md): correcciones, pruebas y pendientes concretos.
+- [Estado del proyecto](docs/ESTADO_PROYECTO.md): auditoría inicial; arquitectura, pantallas reales, base documentada y problemas priorizados.
 - [Plan de desarrollo](docs/PLAN_DESARROLLO.md): alcance personal, fases y criterios para completar el producto.
 - [Plan de despliegue](docs/DESPLIEGUE.md): entorno privado, demo pública y preparación para publicación.
 - [Guía de Git](docs/GIT.md): estado inicial, commits, ramas, pull requests y convenciones.
 - [Validación técnica](docs/VALIDACION.md): comprobaciones ejecutadas y límites de la auditoría.
 - [SQL de referencia](docs/referencia/base_de_datos.txt) e [historial de desarrollo](docs/referencia/historial_desarrollo.md): antecedentes conservados; no equivalen al estado verificado del servicio remoto.
 
-La prioridad es preservar el historial financiero, hacer seguras las recurrencias, versionar la base de datos y sus políticas, corregir las comprobaciones técnicas y completar el uso móvil. La demo deberá utilizar únicamente datos ficticios, separada de cualquier uso personal.
+El siguiente bloque es inspeccionar/versionar la base de datos y sus políticas. Después se implementarán las ocurrencias pendientes y su confirmación manual/automática. La publicación para evaluadores tendrá cuentas propias y datos ficticios, separada del uso personal.
 
 ## Publicación prevista
 
-La propuesta es desplegar Next.js en Vercel y mantener autenticación y datos en Supabase. Como `package.json` está en la raíz del repositorio Git, la configuración **Root Directory** será `./` para este repositorio. Las variables de entorno se configurarán en el proveedor; no se publicarán credenciales ni datos financieros personales.
+Supabase ya proporciona autenticación y datos. La publicación futura añade alojamiento para Next.js en Vercel, manteniendo ese backend. Como `package.json` está en la raíz del repositorio Git, la configuración **Root Directory** será `./` para este repositorio. Las variables de entorno se configurarán en el proveedor; no se publicarán credenciales ni datos financieros personales.
 
-Todavía no hay una demo publicada y validada en esta documentación. El despliegue queda condicionado a resolver los bloqueos de integridad, seguridad y compilación, y a probar un recorrido completo con datos ficticios. El procedimiento está en [Plan de despliegue](docs/DESPLIEGUE.md).
+Todavía no hay una demo publicada y validada en esta documentación. El despliegue queda condicionado a validar restricciones/permisos remotos y probar el recorrido completo con datos ficticios. El procedimiento está en [Plan de despliegue](docs/DESPLIEGUE.md).
 
 ## Licencia
 

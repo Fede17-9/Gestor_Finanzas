@@ -1,5 +1,15 @@
 # Validación de la auditoría
 
+## Resultado vigente tras la primera entrega
+
+El **20 de octubre de 2026** se implementaron las correcciones descritas en [ETAPA_1.md](ETAPA_1.md). Resultado actual: **22 pruebas aprobadas; TypeScript, lint sin errores/advertencias y build aprobados**. El build requiere red para descargar Geist. El servidor de producción respondió HTTP 200 en las nueve rutas existentes.
+
+Los reportes ya no escriben datos al montar. La automatización anterior está desactivada; Supabase sigue integrado. No se modificó ni certificó la base remota y las pruebas del SDK usan respuestas simuladas. La comprobación HTTP no valida una sesión autenticada ni RLS.
+
+## Registro histórico: auditoría inicial
+
+Lo siguiente conserva los resultados anteriores a la implementación; sus fallos de compilación y ausencia de pruebas ya fueron superados por esta entrega.
+
 Fecha: **20 de octubre de 2026**, zona America/Bogota.
 
 ## Alcance y límites

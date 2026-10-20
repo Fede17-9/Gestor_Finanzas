@@ -2,6 +2,12 @@
 
 Referencia: **20 de octubre de 2026**. Este documento describe trabajo pendiente, no funciones ya construidas.
 
+## Avance de implementación
+
+La primera entrega de la etapa 1 ya está aplicada en la aplicación: reportes sin escrituras, importes/fechas compartidos, proyecciones corregidas y pruebas, tipos, lint y build aprobados. Supabase continúa siendo el backend existente. Ver [detalle y límites](ETAPA_1.md).
+
+El refuerzo de restricciones en PostgreSQL y la validación del servicio remoto siguen pendientes de la etapa 2. El nuevo motor con pendientes/confirmaciones de la etapa 3 aún no está implementado; el automático anterior se retiró para evitar escrituras incorrectas.
+
 ## Decisiones acordadas
 
 - Primera versión: ingresos, gastos, recurrencias, calendario, presupuestos y metas de ahorro.

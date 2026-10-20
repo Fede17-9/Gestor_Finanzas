@@ -11,7 +11,7 @@ Next.js sirve la web; Supabase aloja Auth y Postgres. No hay un backend propio s
 ## Ejecutar hoy en local
 
 1. Entrar donde está `package.json`: carpeta local `gestor-finanzas`, raíz `./` del repositorio Git.
-2. Instalar con `npm ci` para respetar el lockfile. La auditoría usó Node 24.19.0; falta fijar versión de proyecto/CI.
+2. Usar Node 24.x (`.nvmrc` y `engines`) e instalar con `npm ci` para respetar el lockfile. La entrega se comprobó con Node 24.19.0.
 3. Si no existe `.env.local`, copiar `.env.example` y completar valores. No sobrescribir configuración existente.
 4. Usar Supabase de pruebas con tablas, datos iniciales y políticas correctas. No ejecutar las sugerencias históricas de permisos sin revisarlas.
 5. Ejecutar `npm run dev` y abrir `/login` o `/registro` en `http://localhost:3000`.
@@ -27,7 +27,7 @@ La segunda conserva un nombre heredado. Para nuevos entornos, preferir una clave
 
 `NEXT_PUBLIC_*` llega al navegador y se incorpora al build: no es un secreto. Cambiar estos valores requiere recompilar para actualizar la web publicada. La protección de datos depende de Auth/RLS. [Variables Next.js](https://nextjs.org/docs/app/guides/environment-variables).
 
-Hoy fallan tipos/lint/build y existe un borrado peligroso al visitar el dashboard autenticado. No usar datos personales hasta corregir integridad. Ver [validación](VALIDACION.md) y [diagnóstico](ESTADO_PROYECTO.md).
+La primera entrega pasa pruebas, tipos, lint y build. El borrado y la generación automática desde el dashboard se retiraron. Falta verificar esquema/RLS y flujos remotos antes de declarar la aplicación lista para producción. Ver [validación](VALIDACION.md) y [cambios de etapa 1](ETAPA_1.md).
 
 ## Alojamiento de bajo costo
 
@@ -76,7 +76,7 @@ Vercel tiene variables por entorno Local/Preview/Production. Las previews de PR 
 
 ## Automatización de recurrencias
 
-Actualmente depende de abrir dashboard; no hay cron de servidor.
+El sincronizador anterior dependía de abrir el dashboard. Fue retirado en la etapa 1; hoy solo se proyectan reglas y no hay cron de servidor ni confirmación automática. Supabase ya aloja Auth y datos; su futura función programada se construirá sobre ese backend existente.
 
 Diseño previsto: función transaccional/idempotente que genera ocurrencias únicas por regla/fecha; pendiente por defecto y automático optativo. Programarla con Supabase Cron y registrar ejecución/reintentos. [Supabase Cron](https://supabase.com/docs/guides/cron). El saldo usa movimientos confirmados, no proyecciones.
 
