@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import { createFinanceReader } from '@/lib/finance-data';
+import { amountToCents, centsToDecimal, formatAmount, isCivilDate, readAllPages } from '@/lib/finance';
 import {
   Repeat, Search, X, Pencil, Trash2, Pause, Play,
-  TrendingUp, TrendingDown, CheckCircle2, AlertTriangle,
+  TrendingUp, TrendingDown, AlertTriangle,
   Loader2, Zap
 } from "lucide-react";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -16,8 +18,8 @@ interface Recurrencia {
   id_recurrencia: string;
   id_usuario: string;
   id_tipo: number;
-  id_categoria: number | null;
-  monto_recurrente: number;
+  id_categoria: string | null;
+  monto_recurrente: number | string;
   frecuencia: string;
   dia_ejecucion: number;
   fecha_inicio: string;
@@ -44,6 +46,8 @@ export default function RecurrenciasPage() {
   const [userId, setUserId]               = useState<string | null>(null);
   const [recurrencias, setRecurrencias]   = useState<Recurrencia[]>([]);
   const [loading, setLoading]             = useState(true);
+  const [currency, setCurrency]           = useState('COP');
+  const [loadError, setLoadError]         = useState('');
   const [searchTerm, setSearchTerm]       = useState("");
   const [toasts, setToasts]               = useState<{ id: number; msg: string; type: "ok" | "err" }[]>([]);
 
@@ -68,16 +72,28 @@ export default function RecurrenciasPage() {
   }
 
   // ── Load ──────────────────────────────────────────────────────────────────
-  async function loadData(uid: string) {
+  const loadData = useCallback(async (uid: string) => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("config_recurrencias")
-      .select("*, categorias(nombre_categoria)")
-      .eq("id_usuario", uid)
-      .order("fecha_inicio", { ascending: false });
-    if (data && !error) setRecurrencias(data);
-    setLoading(false);
-  }
+    try {
+      const [profile, rules] = await Promise.all([
+        createFinanceReader(supabase).profile(uid),
+        readAllPages(async (from, to) => {
+          const { data, error } = await supabase.from('config_recurrencias').select('*, categorias(nombre_categoria)')
+            .eq('id_usuario', uid).order('fecha_inicio', { ascending: false })
+            .order('id_recurrencia', { ascending: true }).range(from, to).returns<Recurrencia[]>();
+          if (error || !data) throw new Error('No se pudieron cargar las reglas.');
+          return data;
+        }),
+      ]);
+      setCurrency(profile.codigo_moneda);
+      setRecurrencias(rules);
+      setLoadError('');
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar las reglas.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -85,8 +101,7 @@ export default function RecurrenciasPage() {
       setUserId(session.user.id);
       loadData(session.user.id);
     });
-    // eslint-disable-next-line
-  }, []);
+  }, [router, loadData]);
 
   // ── Confirm helper ────────────────────────────────────────────────────────
   function askConfirm(title: string, message: string, variant: "danger" | "success", action: () => Promise<void>) {
@@ -107,8 +122,8 @@ export default function RecurrenciasPage() {
     askConfirm(
       next ? "Reactivar recurrencia" : "Pausar recurrencia",
       next
-        ? `¿Reactivar "${rec.categorias?.nombre_categoria ?? "Sin categoría"}"? El motor la procesará desde el Dashboard.`
-        : `¿Pausar "${rec.categorias?.nombre_categoria ?? "Sin categoría"}"? El motor la ignorará mientras esté inactiva.`,
+        ? `¿Reactivar "${rec.categorias?.nombre_categoria ?? "Sin categoría"}"? Volverá a aparecer en las proyecciones.`
+        : `¿Pausar "${rec.categorias?.nombre_categoria ?? "Sin categoría"}"? Se ocultará de las proyecciones mientras esté inactiva.`,
       next ? "success" : "danger",
       async () => {
         const { error } = await supabase
@@ -133,24 +148,12 @@ export default function RecurrenciasPage() {
       `Se eliminará la regla "${rec.categorias?.nombre_categoria ?? "Sin categoría"}". Los movimientos históricos generados por esta regla NO serán eliminados.`,
       "danger",
       async () => {
-        // ── DIAGNÓSTICO: estado del registro antes del DELETE ──────────────
-        console.log("═══════════════════════════════════════════");
-        console.log("[FLUX DELETE] rec completo:", JSON.stringify(rec, null, 2));
-        console.log("[FLUX DELETE] id_recurrencia:", rec.id_recurrencia, "| tipo:", typeof rec.id_recurrencia);
-        console.log("[FLUX DELETE] id_usuario:", rec.id_usuario, "| tipo:", typeof rec.id_usuario);
-        console.log("═══════════════════════════════════════════");
-
-        const { data, error, count } = await supabase
+        const { data, error } = await supabase
           .from("config_recurrencias")
           .delete()
           .eq("id_recurrencia", rec.id_recurrencia)
           .eq("id_usuario", rec.id_usuario)
           .select();
-
-        console.log("DELETE RESULT", { data, error, count });
-        console.log("[FLUX DELETE] filas eliminadas:", data?.length ?? 0);
-        if (error) console.error("[FLUX DELETE] error Supabase:", error.message, error.details, error.hint);
-        if (data?.length === 0) console.warn("[FLUX DELETE] 0 filas eliminadas — posible bloqueo RLS o id_recurrencia no encontrado");
 
         if (error) {
           toast("No se pudo eliminar la regla.", "err");
@@ -177,9 +180,16 @@ export default function RecurrenciasPage() {
   async function handleGuardar(e: React.FormEvent) {
     e.preventDefault();
     if (!editRec) return;
-    const monto = parseFloat(eMonto);
-    if (!eMonto || monto <= 0) { toast("El monto debe ser mayor que cero.", "err"); return; }
-    if (!eFechaInicio) { toast("La fecha de inicio es obligatoria.", "err"); return; }
+    let monto: string;
+    try {
+      monto = centsToDecimal(amountToCents(eMonto));
+      if (!isCivilDate(eFechaInicio)) throw new Error('La fecha de inicio no es válida.');
+      if (eFechaFin && (!isCivilDate(eFechaFin) || eFechaFin < eFechaInicio)) throw new Error('La fecha final no puede ser anterior al inicio.');
+      if (!['Diario', 'Semanal', 'Mensual', 'Anual'].includes(eFrecuencia)) throw new Error('Frecuencia inválida.');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Datos inválidos.', 'err');
+      return;
+    }
 
     setIsSaving(true);
     const { error } = await supabase
@@ -219,8 +229,8 @@ export default function RecurrenciasPage() {
     : recurrencias;
 
   // ── Helpers visuales ──────────────────────────────────────────────────────
-  function fmtMoney(n: number) {
-    return n.toLocaleString("es-CO", { minimumFractionDigits: 0 });
+  function fmtMoney(n: number | string) {
+    return formatAmount(n, currency);
   }
   function fmtFecha(f: string | null) {
     if (!f) return "—";
@@ -229,6 +239,10 @@ export default function RecurrenciasPage() {
   }
 
   // ── Loading ───────────────────────────────────────────────────────────────
+  if (loadError) return <div role="alert" className="text-red-300 p-6">
+    {loadError}
+    <button className="block mt-4 underline" onClick={() => { if (userId) void loadData(userId); }}>Volver a cargar</button>
+  </div>;
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4 text-[#39FF14] font-mono tracking-widest animate-pulse">
@@ -268,9 +282,8 @@ export default function RecurrenciasPage() {
       <div className="flex items-start gap-3 bg-yellow-400/5 border border-yellow-400/20 rounded-2xl p-4 mb-6">
         <Zap size={16} className="text-yellow-400 shrink-0 mt-0.5" />
         <p className="text-[11px] text-yellow-400/80 font-mono leading-relaxed">
-          Estas reglas son consumidas por el <span className="text-yellow-400 font-bold">Motor de Sincronización Automática</span> en el Dashboard. 
-          Editar frecuencia o fecha de inicio puede generar nuevos movimientos automáticos al próximo acceso al Dashboard.
-          La categoría y el tipo <span className="font-bold">no son editables</span> para mantener la integridad del motor.
+          Estas reglas se usan para las proyecciones del calendario. El registro automático está temporalmente desactivado.
+          Registra cada pago o cobro cuando ocurra; editar una regla no modifica los movimientos históricos.
         </p>
       </div>
 
@@ -359,7 +372,7 @@ export default function RecurrenciasPage() {
                       </td>
                       {/* Monto */}
                       <td className={`p-4 text-right font-mono font-bold text-base ${isIngreso ? "text-[#39FF14]" : "text-white"}`}>
-                        {isIngreso ? "+" : "-"}${fmtMoney(rec.monto_recurrente)}
+                        {isIngreso ? "+" : "-"}{fmtMoney(rec.monto_recurrente)}
                       </td>
                       {/* Fechas */}
                       <td className="p-4 font-mono text-[10px] text-zinc-500">
@@ -449,7 +462,7 @@ export default function RecurrenciasPage() {
             <div className="flex items-start gap-2 bg-yellow-400/5 border border-yellow-400/20 rounded-xl p-3 mb-4">
               <AlertTriangle size={12} className="text-yellow-400 shrink-0 mt-0.5" />
               <p className="text-[9px] text-yellow-400/70 font-mono leading-relaxed">
-                Cambiar frecuencia o fecha de inicio afectará qué movimientos genera el motor al próximo acceso al Dashboard.
+                Cambiar frecuencia o fechas modifica la proyección, sin crear ni borrar movimientos registrados.
               </p>
             </div>
 
@@ -471,6 +484,7 @@ export default function RecurrenciasPage() {
                   <option value="Diario">Diario</option>
                   <option value="Semanal">Semanal</option>
                   <option value="Mensual">Mensual</option>
+                  <option value="Anual">Anual</option>
                 </select>
               </div>
 

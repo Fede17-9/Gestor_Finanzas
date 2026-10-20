@@ -1,159 +1,78 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Zap, CheckCircle2 } from 'lucide-react';
+import { createFinanceReader } from '@/lib/finance-data';
+import { calendarEvents, calendarTotals, civilToday, civilToDate, formatAmount, movementSign } from '@/lib/finance';
+import type { CalendarEvent, Movement, Profile, Recurrence } from '@/lib/finance';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Zap, CheckCircle2 } from 'lucide-react';
+
+const reader = createFinanceReader(supabase);
 
 export default function CalendarioPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [recurrencias, setRecurrencias] = useState<any[]>([]);
-  const [movimientosReales, setMovimientosReales] = useState<any[]>([]);
-  const [currentDate, setCurrentDate] = useState(new Date());
-
-  const fetchData = async () => {
-    setLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    // Obtener las reglas activas (flujo proyectado)
-    const { data: recData, error: recError } = await supabase
-      .from('config_recurrencias')
-      .select('id_recurrencia, monto_recurrente, frecuencia, dia_ejecucion, fecha_inicio, id_tipo, categorias(nombre_categoria)')
-      .eq('id_usuario', session.user.id)
-      .eq('estado_activo', true);
-
-    // Obtener movimientos reales grabados en el pasado (historial duro)
-    // Extraemos todos los de este usuario y los filtramos matemáticamente por rendimiento.
-    const { data: movData, error: movError } = await supabase
-      .from('movimientos')
-      .select('id_movimiento, monto_transaccion, fecha_operacion, id_tipo, es_automatico, categorias(nombre_categoria)')
-      .eq('id_usuario', session.user.id);
-
-    if (recData && !recError) setRecurrencias(recData);
-    if (movData && !movError) setMovimientosReales(movData);
-
-    setLoading(false);
-  };
+  const [loadError, setLoadError] = useState('');
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [recurrencias, setRecurrencias] = useState<Recurrence[]>([]);
+  const [movimientosReales, setMovimientosReales] = useState<Movement[]>([]);
+  const [currentDate, setCurrentDate] = useState(() => civilToDate(civilToday()));
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    let active = true;
+    async function load() {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw new Error('No se pudo comprobar tu sesión.');
+        if (!session) { router.replace('/login'); return; }
+        const [rules, movements, userProfile] = await Promise.all([
+          reader.recurrences(session.user.id), reader.movements(session.user.id), reader.profile(session.user.id),
+        ]);
+        if (active) { setRecurrencias(rules); setMovimientosReales(movements); setProfile(userProfile); }
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : 'No se pudo cargar el calendario.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    void load();
+    return () => { active = false; };
+  }, [router]);
 
-  const nextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
-  const prevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
-
-  const monthNames = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
-
+  const nextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1, 12));
+  const prevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1, 12));
+  const monthNames = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
   const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-
-  const mapEventsToDays = () => {
-    let dayEvents: Record<number, any[]> = {};
-    for (let i = 1; i <= daysInMonth; i++) dayEvents[i] = [];
-
-    // 1. Inyectar Automáticos (Proyecciones de Máquina)
-    recurrencias.forEach(rec => {
-      const evt = { ...rec, isReal: false };
-      if (rec.frecuencia === 'Mensual') {
-        let targetDay = rec.dia_ejecucion;
-        if (targetDay > daysInMonth) targetDay = daysInMonth;
-        if (dayEvents[targetDay]) dayEvents[targetDay].push(evt);
-      }
-      else if (rec.frecuencia === 'Diario') {
-        for (let i = 1; i <= daysInMonth; i++) dayEvents[i].push(evt);
-      }
-      else if (rec.frecuencia === 'Semanal') {
-        const inicio = new Date(rec.fecha_inicio + "T00:00:00");
-        for (let i = 1; i <= daysInMonth; i++) {
-          const diaEvaluado = new Date(currentDate.getFullYear(), currentDate.getMonth(), i);
-          const diffTime = Math.abs(diaEvaluado.getTime() - inicio.getTime());
-          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-          if (diffDays % 7 === 0 && diaEvaluado >= inicio) dayEvents[i].push(evt);
-        }
-      }
-    });
-
-    // 2. Inyectar Movimientos Estáticos (Historial Real Humano)
-    movimientosReales.forEach(mov => {
-      // Asegurar zona horaria y evitar desfases separando el string manualmente
-      const [year, month, day] = mov.fecha_operacion.split('T')[0].split('-');
-      const fechaOp = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-
-      // Si operó en el año y mes exacto que estamos viendo
-      if (fechaOp.getFullYear() === currentDate.getFullYear() && fechaOp.getMonth() === currentDate.getMonth()) {
-        const diaDelMovimiento = fechaOp.getDate();
-        if (dayEvents[diaDelMovimiento]) {
-          dayEvents[diaDelMovimiento].push({
-            id_tipo: mov.id_tipo,
-            monto_recurrente: mov.monto_transaccion, // mapeado para reutilizar interfaz
-            categorias: mov.categorias,
-            isReal: true, // FLAG ESTÁTICO MANUAL/EJECUTADO
-            isAutoDB: mov.es_automatico, // FLAG si provino del motor
-            id_recurrencia: mov.id_movimiento
-          });
-        }
-      }
-    });
-
-    // 3. Fusión Inteligente y Deduplicación Extrema (Reduce/Merge)
-    for (let i = 1; i <= daysInMonth; i++) {
-      const merged = [];
-
-      // Separar reales y proyecciones
-      const reales = dayEvents[i].filter(e => e.isReal);
-      const proyecciones = dayEvents[i].filter(e => !e.isReal);
-
-      // Limpiar Reales de duplicados directos (Bug del Múltiple Insert por modo estricto de React)
-      const realesUnicos: typeof reales = [];
-      const vistasReal = new Set();
-      reales.forEach(r => {
-        const key = `${r.categorias?.nombre_categoria}_${r.monto_recurrente}`;
-        if (!vistasReal.has(key)) {
-          vistasReal.add(key);
-          realesUnicos.push(r);
-        }
-      });
-
-      // Revisar las proyecciones. Si hay un real que le coincida, hereda AutoDB y la proyección muere.
-      proyecciones.forEach(p => {
-        const key = `${p.categorias?.nombre_categoria}_${p.monto_recurrente}`;
-        const match = realesUnicos.find(r => `${r.categorias?.nombre_categoria}_${r.monto_recurrente}` === key);
-        if (match) {
-          // Transferencia de Alma
-          match.isAutoDB = true;
-        } else {
-          // Sobrevive la proyección pura
-          merged.push(p);
-        }
-      });
-
-      // Reconstruimos el listado del día combinando de forma segura
-      dayEvents[i] = [...realesUnicos, ...merged];
+  const computed = useMemo<{ events: Record<number, CalendarEvent[]>; totals: ReturnType<typeof calendarTotals> | null; error: string }>(() => {
+    try {
+      const events = calendarEvents(movimientosReales, recurrencias, currentDate.getFullYear(), currentDate.getMonth());
+      return { events, totals: calendarTotals(events), error: '' };
+    } catch (error) {
+      return { events: {}, totals: null, error: error instanceof Error ? error.message : 'No se pudo calcular el calendario.' };
     }
-
-    return dayEvents;
-  };
-
-  const eventosPorDia = mapEventsToDays();
-
-  // Calcular las sumas globales separando Proyectado vs Histórico
-  let proyecIn = 0; let proyecOut = 0;
-  let manualIn = 0; let manualOut = 0;
-
-  Object.values(eventosPorDia).forEach(eventList => {
-    eventList.forEach(e => {
-      if (e.isAutoDB || !e.isReal) {
-        if (e.id_tipo === 1) proyecIn += Number(e.monto_recurrente);
-        else if (e.id_tipo === 2) proyecOut += Number(e.monto_recurrente);
-      } else {
-        if (e.id_tipo === 1) manualIn += Number(e.monto_recurrente);
-        else if (e.id_tipo === 2) manualOut += Number(e.monto_recurrente);
-      }
-    });
-  });
+  }, [movimientosReales, recurrencias, currentDate]);
+  if (loadError || computed.error) {
+    return <div role="alert" className="p-6 text-red-300">
+      {loadError || computed.error}
+      <button className="block mt-4 underline" onClick={() => window.location.reload()}>Volver a cargar</button>
+    </div>;
+  }
+  const eventosPorDia = computed.events;
+  const currency = profile?.codigo_moneda || 'COP';
+  const manualIn = (computed.totals?.realIncome ?? 0) / 100;
+  const manualOut = (computed.totals?.realExpense ?? 0) / 100;
+  const proyecIn = (computed.totals?.forecastIncome ?? 0) / 100;
+  const proyecOut = (computed.totals?.forecastExpense ?? 0) / 100;
+  const today = civilToDate(civilToday());
 
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-in fade-in duration-500 relative">
+
+      <p className="text-sm text-zinc-400 mb-6">
+        Las proyecciones no cambian tu saldo ni confirman un pago. Pueden incluir operaciones ya registradas; todavía no se concilian automáticamente. El registro automático está temporalmente desactivado.
+      </p>
 
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
@@ -163,7 +82,7 @@ export default function CalendarioPage() {
             Pronóstico
           </h1>
           <p className="text-zinc-500 font-mono text-[10px] uppercase tracking-widest mt-2 border-l-2 border-[#39FF14] pl-3 py-0.5">
-            Mapeo de Flujo Estático + Automático
+            Movimientos registrados y programación estimada
           </p>
         </div>
 
@@ -172,21 +91,21 @@ export default function CalendarioPage() {
           {/* Reales (Históricos del Mes) */}
           <div className="px-5 py-3 flex flex-col justify-center border-r border-zinc-800 bg-zinc-900/50">
             <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">
-              <CheckCircle2 size={10} /> Caja Estática
+              <CheckCircle2 size={10} /> Registrado
             </span>
             <div className="flex gap-4 mt-0.5">
-              <span className="text-zinc-300 font-black font-mono text-xs">+${manualIn.toLocaleString()}</span>
-              <span className="text-red-300/80 font-black font-mono text-xs">-${manualOut.toLocaleString()}</span>
+              <span className="text-zinc-300 font-black font-mono text-xs">{formatAmount(manualIn, currency)}</span>
+              <span className="text-red-300/80 font-black font-mono text-xs">{formatAmount(manualOut, currency)}</span>
             </div>
           </div>
           {/* Proyecciones Futuras */}
           <div className="px-5 py-3 flex flex-col justify-center">
             <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">
-              <Zap size={10} className="text-[#39FF14]" /> Flujo Máquina
+              <Zap size={10} className="text-[#39FF14]" /> Programado (estimación)
             </span>
             <div className="flex gap-4 mt-0.5">
-              <span className="text-[#39FF14] font-black font-mono text-xs">+${proyecIn.toLocaleString()}</span>
-              <span className="text-[#ff3939] font-black font-mono text-xs">-${proyecOut.toLocaleString()}</span>
+              <span className="text-[#39FF14] font-black font-mono text-xs">{formatAmount(proyecIn, currency)}</span>
+              <span className="text-[#ff3939] font-black font-mono text-xs">{formatAmount(proyecOut, currency)}</span>
             </div>
           </div>
         </div>
@@ -237,8 +156,8 @@ export default function CalendarioPage() {
 
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const dayNum = i + 1;
-                const events = eventosPorDia[dayNum];
-                const isToday = new Date().getDate() === dayNum && new Date().getMonth() === currentDate.getMonth() && new Date().getFullYear() === currentDate.getFullYear();
+                const events = eventosPorDia[dayNum] ?? [];
+                const isToday = today.getDate() === dayNum && today.getMonth() === currentDate.getMonth() && today.getFullYear() === currentDate.getFullYear();
 
                 return (
                   <div key={dayNum} className={`min-h-[110px] flex flex-col p-2 border rounded-2xl transition-all duration-300 hover:border-zinc-500 hover:shadow-[0_0_15px_rgba(255,255,255,0.05)] ${isToday ? 'border-[#39FF14]/50 bg-[#39FF14]/5 ring-1 ring-[#39FF14]/20' : 'border-zinc-800/60 bg-zinc-900/30'
@@ -248,10 +167,11 @@ export default function CalendarioPage() {
                     </span>
 
                     <div className="flex flex-col gap-1.5 overflow-y-auto custom-scrollbar flex-1">
-                      {events.map((evt, idx) => {
-                        const isIngreso = evt.id_tipo === 1;
+                      {events.map((evt) => {
+                        const sign = movementSign(evt.id_tipo);
+                        const isIngreso = sign > 0;
                         return (
-                          <div key={idx} className={`w-full px-1.5 py-1.5 rounded-lg bg-zinc-900/80 border text-[9px] font-mono tracking-wider flex justify-between items-center ${isIngreso ? ' border-[#39FF14]/30' : ' border-[#ff3939]/30'
+                          <div key={evt.key} className={`w-full px-1.5 py-1.5 rounded-lg bg-zinc-900/80 border text-[9px] font-mono tracking-wider flex justify-between items-center ${isIngreso ? ' border-[#39FF14]/30' : ' border-[#ff3939]/30'
                             }`}>
                             <span className="truncate flex items-center gap-1 text-zinc-300" title={evt.categorias?.nombre_categoria || 'Desc'}>
                               {evt.isReal ? (
@@ -264,7 +184,7 @@ export default function CalendarioPage() {
                               {evt.categorias?.nombre_categoria?.substring(0, 8) || (evt.isReal ? 'REAL' : 'PROYECTO')}
                             </span>
                             <span className={`font-black ${isIngreso ? 'text-[#39FF14]' : 'text-[#ff3939]'}`}>
-                              ${evt.monto_recurrente}
+                              {sign > 0 ? '+' : sign < 0 ? '-' : ''}{formatAmount(evt.monto_recurrente, currency)}
                             </span>
                           </div>
                         );

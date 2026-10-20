@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Image from 'next/image';
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import {
@@ -28,8 +29,6 @@ interface ToastItem {
   type: "ok" | "err";
 }
 
-let _toastId = 0;
-
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const inputCls =
   "w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white text-sm " +
@@ -44,6 +43,7 @@ const readonlyCls =
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ConfiguracionPage() {
   const router = useRouter();
+  const toastId = useRef(0);
 
   // ── Auth / profile ──────────────────────────────────────────────────────────
   const [userId, setUserId]             = useState<string | null>(null);
@@ -62,7 +62,7 @@ export default function ConfiguracionPage() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   function toast(msg: string, type: "ok" | "err" = "ok") {
-    const id = ++_toastId;
+    const id = ++toastId.current;
     setToasts((prev) => [...prev, { id, msg, type }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3800);
   }
@@ -118,7 +118,6 @@ export default function ConfiguracionPage() {
       .update({
         nombre_completo: nombreTrim,
         username: usernameTrim,
-        codigo_moneda: moneda,
         url_avatar: avatar,
       })
       .eq("id_usuario", userId);
@@ -238,13 +237,16 @@ export default function ConfiguracionPage() {
             <label className={labelCls}>Moneda base *</label>
             <select
               value={moneda}
-              onChange={(e) => setMoneda(e.target.value as Moneda)}
+              disabled
               className={inputCls}
             >
               <option value="USD">USD — Dólar Estadounidense</option>
               <option value="COP">COP — Peso Colombiano</option>
               <option value="EUR">EUR — Euro</option>
             </select>
+            <p className="text-xs text-zinc-500 mt-3">
+              La moneda se elige al registrarte. Cambiarla no convierte los importes del historial.
+            </p>
           </div>
         </section>
 
@@ -260,9 +262,12 @@ export default function ConfiguracionPage() {
 
           {/* Preview del avatar actual */}
           <div className="flex items-center gap-4 mb-6">
-            <img
+            <Image
               src={avatar}
               alt="Avatar actual"
+              width={64}
+              height={64}
+              unoptimized
               className="w-16 h-16 rounded-full border-2 border-[#39FF14] shadow-[0_0_16px_rgba(57,255,20,0.4)] bg-zinc-900 object-cover"
             />
             <div>
@@ -285,7 +290,7 @@ export default function ConfiguracionPage() {
                     : "border-zinc-800 hover:border-zinc-600 opacity-50 hover:opacity-100"
                 }`}
               >
-                <img src={url} alt="Avatar opción" className="w-full h-full object-cover bg-zinc-900" />
+                <Image src={url} alt="Avatar opción" width={56} height={56} unoptimized className="w-full h-full object-cover bg-zinc-900" />
               </button>
             ))}
           </div>

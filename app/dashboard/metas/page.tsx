@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import {
@@ -8,6 +8,8 @@ import {
   CheckCircle2, Clock, AlertTriangle, Zap
 } from "lucide-react";
 import ConfirmModal from "@/components/ConfirmModal";
+import { createFinanceReader } from '@/lib/finance-data';
+import { addCents, amountToCents, centsToDecimal, formatAmount, isCivilDate, readAllPages } from '@/lib/finance';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -31,10 +33,6 @@ const PRIORIDADES: Prioridad[] = ["Bajo", "Medio", "Alto"];
 function pct(actual: number, objetivo: number): number {
   if (objetivo <= 0) return 0;
   return Math.min(100, Math.round((actual / objetivo) * 100));
-}
-
-function fmtMoney(n: number) {
-  return n.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function estadoMeta(actual: number, objetivo: number): string {
@@ -69,6 +67,8 @@ export default function MetasPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [metas, setMetas] = useState<Meta[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [currency, setCurrency] = useState('COP');
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastId = useRef(0); // useRef evita que se reinicie en cada render
 
@@ -94,14 +94,30 @@ export default function MetasPage() {
   }
 
   // ── Load session & metas ────────────────────────────────────────────────────
-  async function loadMetas(uid: string) {
-    const { data, error } = await supabase
-      .from("metas_ahorro")
-      .select("*")
-      .eq("id_usuario", uid)
-      .order("fecha_proyectada", { ascending: true });
-    if (!error && data) setMetas(data as Meta[]);
-  }
+  const loadMetas = useCallback(async (uid: string) => {
+    try {
+      const [profile, data] = await Promise.all([
+        createFinanceReader(supabase).profile(uid),
+        readAllPages(async (from, to) => {
+          const { data, error } = await supabase.from('metas_ahorro').select('*').eq('id_usuario', uid)
+            .order('id_meta', { ascending: true }).range(from, to).returns<Meta[]>();
+          if (error || !data) throw new Error('No se pudieron cargar todas las metas.');
+          return data;
+        }),
+      ]);
+      for (const meta of data) {
+        amountToCents(meta.monto_objetivo);
+        amountToCents(meta.monto_actual, true);
+      }
+      setCurrency(profile.codigo_moneda);
+      setMetas(data);
+      setLoadError('');
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar las metas.');
+    }
+  }, []);
+
+  function fmtMoney(value: number | string) { return formatAmount(value, currency); }
 
   useEffect(() => {
     (async () => {
@@ -111,7 +127,7 @@ export default function MetasPage() {
       await loadMetas(session.user.id);
       setLoading(false);
     })();
-  }, [router]);
+  }, [router, loadMetas]);
 
   // ── Create ──────────────────────────────────────────────────────────────────
   async function handleCreate(e: React.FormEvent) {
@@ -119,19 +135,23 @@ export default function MetasPage() {
     if (!userId) return;
 
     const nombre = cNombre.trim();
-    const objetivo = parseFloat(cObjetivo);
-    const actual = parseFloat(cActual) || 0;
-
-    if (!nombre) { toast("Complete los campos obligatorios.", "err"); return; }
-    if (isNaN(objetivo) || objetivo <= 0) { toast("El monto objetivo debe ser mayor que cero.", "err"); return; }
-    if (actual < 0) { toast("El monto actual no puede ser negativo.", "err"); return; }
+    let objetivo: number, actual: number;
+    try {
+      objetivo = amountToCents(cObjetivo) / 100;
+      actual = amountToCents(cActual.trim() || '0', true) / 100;
+      if (!nombre) throw new Error('El nombre es obligatorio.');
+      if (cFecha && !isCivilDate(cFecha)) throw new Error('La fecha no es válida.');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Importe inválido.', 'err');
+      return;
+    }
 
     setCreating(true);
     const { error } = await supabase.from("metas_ahorro").insert([{
       id_usuario: userId,
       nombre_meta: nombre,
-      monto_objetivo: objetivo,
-      monto_actual: actual,
+      monto_objetivo: centsToDecimal(amountToCents(cObjetivo)),
+      monto_actual: centsToDecimal(amountToCents(cActual.trim() || '0', true)),
       fecha_proyectada: cFecha || null,
       prioridad_nivel: cPrioridad,
       estado_meta: estadoMeta(actual, objetivo),
@@ -153,14 +173,16 @@ export default function MetasPage() {
     e.preventDefault();
     if (!editMeta || !userId) return;
 
-    const actual = parseFloat(editActual);
-    if (isNaN(actual) || actual < 0) { toast("Ingresa un monto válido.", "err"); return; }
+    let actualCents: number;
+    try { actualCents = amountToCents(editActual, true); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Importe inválido.', 'err'); return; }
+    const actual = actualCents / 100;
 
     setUpdating(true);
     const { error } = await supabase
       .from("metas_ahorro")
-      .update({ monto_actual: actual, estado_meta: estadoMeta(actual, editMeta.monto_objetivo) })
-      .eq("id_meta", editMeta.id_meta);
+      .update({ monto_actual: centsToDecimal(actualCents), estado_meta: estadoMeta(actual, editMeta.monto_objetivo) })
+      .eq("id_meta", editMeta.id_meta).eq('id_usuario', userId);
 
     if (error) {
       toast("Error al actualizar: " + error.message, "err");
@@ -189,7 +211,7 @@ export default function MetasPage() {
     const meta = pendingMeta;
     setPendingMeta(null);
 
-    const { error } = await supabase.from("metas_ahorro").delete().eq("id_meta", meta.id_meta);
+    const { error } = await supabase.from("metas_ahorro").delete().eq("id_meta", meta.id_meta).eq('id_usuario', userId);
     if (error) {
       toast("Error al eliminar: " + error.message, "err");
     } else {
@@ -207,8 +229,12 @@ export default function MetasPage() {
   // ── Summary stats ───────────────────────────────────────────────────────────
   const totalMetas = metas.length;
   const completadas = metas.filter(m => m.estado_meta === "Completada").length;
-  const totalObjetivo = metas.reduce((a, m) => a + Number(m.monto_objetivo), 0);
-  const totalAhorrado = metas.reduce((a, m) => a + Number(m.monto_actual), 0);
+  let totalObjetivo = 0, totalAhorrado = 0, totalsError = '';
+  try {
+    totalObjetivo = metas.reduce((total, meta) => addCents(total, amountToCents(meta.monto_objetivo)), 0) / 100;
+    totalAhorrado = metas.reduce((total, meta) => addCents(total, amountToCents(meta.monto_actual, true)), 0) / 100;
+  } catch (error) { totalsError = error instanceof Error ? error.message : 'No se pudieron calcular los totales.'; }
+  if (loadError || totalsError) return <p role="alert" className="text-red-300 p-6">{loadError || totalsError}</p>;
 
   // ── Input styles ────────────────────────────────────────────────────────────
   const inputCls = "w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] transition-all placeholder-zinc-600 [color-scheme:dark]";
@@ -266,8 +292,8 @@ export default function MetasPage() {
         {[
           { label: "Total Metas", value: totalMetas.toString(), icon: Target, color: "text-zinc-300" },
           { label: "Completadas", value: completadas.toString(), icon: CheckCircle2, color: "text-[#39FF14]" },
-          { label: "Objetivo Total", value: `$${fmtMoney(totalObjetivo)}`, icon: TrendingUp, color: "text-zinc-300" },
-          { label: "Total Ahorrado", value: `$${fmtMoney(totalAhorrado)}`, icon: Zap, color: "text-[#39FF14]" },
+          { label: "Objetivo Total", value: `${fmtMoney(totalObjetivo)}`, icon: TrendingUp, color: "text-zinc-300" },
+          { label: "Total Ahorrado", value: `${fmtMoney(totalAhorrado)}`, icon: Zap, color: "text-[#39FF14]" },
         ].map((s, i) => (
           <div key={i} className="bg-[#09090b] p-5 rounded-2xl border border-zinc-800/50 hover:border-zinc-700 transition-colors group relative overflow-hidden">
             <div className="absolute top-0 left-0 w-1 h-full bg-zinc-800 group-hover:bg-[#39FF14] transition-colors duration-300" />
@@ -304,7 +330,7 @@ export default function MetasPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {metas.map(meta => {
             const p = pct(Number(meta.monto_actual), Number(meta.monto_objetivo));
-            const restante = Math.max(0, Number(meta.monto_objetivo) - Number(meta.monto_actual));
+            const restante = Math.max(0, amountToCents(meta.monto_objetivo) - amountToCents(meta.monto_actual, true)) / 100;
             const completada = meta.estado_meta === "Completada";
 
             return (
@@ -362,16 +388,16 @@ export default function MetasPage() {
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="bg-zinc-900/60 rounded-xl p-2">
                     <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mb-1">Ahorrado</p>
-                    <p className="text-xs font-black text-[#39FF14] font-mono">${fmtMoney(Number(meta.monto_actual))}</p>
+                    <p className="text-xs font-black text-[#39FF14] font-mono">{fmtMoney(Number(meta.monto_actual))}</p>
                   </div>
                   <div className="bg-zinc-900/60 rounded-xl p-2">
                     <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mb-1">Objetivo</p>
-                    <p className="text-xs font-black text-white font-mono">${fmtMoney(Number(meta.monto_objetivo))}</p>
+                    <p className="text-xs font-black text-white font-mono">{fmtMoney(Number(meta.monto_objetivo))}</p>
                   </div>
                   <div className="bg-zinc-900/60 rounded-xl p-2">
                     <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mb-1">Restante</p>
                     <p className={`text-xs font-black font-mono ${restante === 0 ? "text-[#39FF14]" : "text-zinc-300"}`}>
-                      ${fmtMoney(restante)}
+                      {fmtMoney(restante)}
                     </p>
                   </div>
                 </div>
@@ -506,7 +532,7 @@ export default function MetasPage() {
                     className={`${inputCls} pl-8`} />
                 </div>
                 <p className="text-[10px] text-zinc-600 font-mono mt-2 ml-1">
-                  Objetivo: ${fmtMoney(Number(editMeta.monto_objetivo))}
+                  Objetivo: {fmtMoney(Number(editMeta.monto_objetivo))}
                 </p>
               </div>
 

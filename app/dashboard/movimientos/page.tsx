@@ -1,294 +1,226 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
-import { ArrowLeftRight, Plus, Calendar, Search, X, TrendingUp, TrendingDown, Layers, CreditCard, Repeat, Zap, Pencil, Trash2, AlertTriangle } from "lucide-react";
-import ConfirmModal from "@/components/ConfirmModal";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { createFinanceReader } from '@/lib/finance-data';
+import { amountToCents, centsToDecimal, civilToday, formatAmount, isCivilDate, movementSign, readAllPages } from '@/lib/finance';
+import type { Category, Movement } from '@/lib/finance';
+import { ArrowLeftRight, Plus, Calendar, Search, X, TrendingUp, TrendingDown, Layers, CreditCard, Repeat, Zap, Pencil, Trash2, AlertTriangle } from 'lucide-react';
+import ConfirmModal from '@/components/ConfirmModal';
+
+const reader = createFinanceReader(supabase);
 
 export default function MovimientosPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [movimientos, setMovimientos] = useState<any[]>([]);
-  const [categoriasLista, setCategoriasLista] = useState<any[]>([]);
-
-  // Estados del Formulario Flotante (Modal)
+  const [loadError, setLoadError] = useState('');
+  const [currency, setCurrency] = useState('COP');
+  const [movimientos, setMovimientos] = useState<Movement[]>([]);
+  const [categoriasLista, setCategoriasLista] = useState<Category[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [monto, setMonto] = useState("");
-  const [descripcion, setDescripcion] = useState("");
-  const [tipoMovimiento, setTipoMovimiento] = useState("2"); // 2 = Egreso por defecto
-  const [metodoPago, setMetodoPago] = useState("Efectivo");
-  const [categoria, setCategoria] = useState("");
-  const [fechaOperacion, setFechaOperacion] = useState(new Date().toISOString().split('T')[0]);
-
-  // Recurrencia
+  const [monto, setMonto] = useState('');
+  const [descripcion, setDescripcion] = useState('');
+  const [tipoMovimiento, setTipoMovimiento] = useState('2');
+  const [metodoPago, setMetodoPago] = useState('Efectivo');
+  const [categoria, setCategoria] = useState('');
+  const [fechaOperacion, setFechaOperacion] = useState(civilToday);
   const [isRecurrente, setIsRecurrente] = useState(false);
-  const [frecuencia, setFrecuencia] = useState("Mensual");
-  const [diaEjecucion, setDiaEjecucion] = useState("1");
-  const [fechaFin, setFechaFin] = useState("");
-
+  const [frecuencia, setFrecuencia] = useState('Mensual');
+  const [diaEjecucion, setDiaEjecucion] = useState('1');
+  const [fechaFin, setFechaFin] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Buscador en memoria
-  const [searchTerm, setSearchTerm] = useState("");
-
-  // ── Toasts ────────────────────────────────────────────────────────────────
+  const [searchTerm, setSearchTerm] = useState('');
   const [toasts, setToasts] = useState<{ id: number; msg: string; type: 'ok' | 'err' }[]>([]);
-  let _tid = 0;
-  function toast(msg: string, type: 'ok' | 'err' = 'ok') {
-    const id = ++_tid;
-    setToasts(prev => [...prev, { id, msg, type }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
-  }
-
-  // ── Estados modal Editar ──────────────────────────────────────────────────
-  const [editMov, setEditMov] = useState<any | null>(null);
-  const [editTipo, setEditTipo] = useState("2");
-  const [editMonto, setEditMonto] = useState("");
-  const [editDescripcion, setEditDescripcion] = useState("");
-  const [editMetodo, setEditMetodo] = useState("Efectivo");
-  const [editCategoria, setEditCategoria] = useState("");
-  const [editFecha, setEditFecha] = useState("");
+  const toastId = useRef(0);
+  const submitLock = useRef(false);
+  const [editMov, setEditMov] = useState<Movement | null>(null);
+  const [editTipo, setEditTipo] = useState('2');
+  const [editMonto, setEditMonto] = useState('');
+  const [editDescripcion, setEditDescripcion] = useState('');
+  const [editMetodo, setEditMetodo] = useState('Efectivo');
+  const [editCategoria, setEditCategoria] = useState('');
+  const [editFecha, setEditFecha] = useState('');
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingMov, setPendingMov] = useState<Movement | null>(null);
 
-  function abrirEditar(mov: any) {
-    setEditMov(mov);
-    setEditTipo(String(mov.id_tipo));
-    setEditMonto(String(mov.monto_transaccion));
-    setEditDescripcion(mov.descripcion_detalle ?? "");
-    setEditMetodo(mov.metodo_pago ?? "Efectivo");
-    setEditCategoria(mov.categorias?.nombre_categoria ?? "");
-    setEditFecha(mov.fecha_operacion.split('T')[0]);
+  function toast(msg: string, type: 'ok' | 'err' = 'ok') {
+    const id = ++toastId.current;
+    setToasts(previous => [...previous, { id, msg, type }]);
+    setTimeout(() => setToasts(previous => previous.filter(item => item.id !== id)), 3500);
   }
 
-  const handleActualizar = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editMov) return;
-    const montoN = parseFloat(editMonto);
-    if (!editMonto || montoN <= 0) { toast("El monto debe ser mayor que cero.", "err"); return; }
-    if (!editFecha) { toast("La fecha es obligatoria.", "err"); return; }
-    if (!editDescripcion.trim()) { toast("Complete los campos obligatorios.", "err"); return; }
-
-    setIsEditSubmitting(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setIsEditSubmitting(false); return; }
-
-    // Resolver categoría
-    let finalCatId = editMov.id_categoria ?? null;
-    const nombreCat = editCategoria.trim();
-    if (nombreCat) {
-      const existing = categoriasLista.find(
-        c => c.nombre_categoria.toLowerCase() === nombreCat.toLowerCase()
-      );
-      if (existing) {
-        finalCatId = existing.id_categoria;
-      } else {
-        const { data: nc } = await supabase
-          .from('categorias')
-          .insert([{ id_usuario: session.user.id, nombre_categoria: nombreCat }])
-          .select('id_categoria')
-          .single();
-        if (nc) finalCatId = nc.id_categoria;
-      }
-    } else {
-      finalCatId = null;
-    }
-
-    console.log("[Flux] Editando id_movimiento:", editMov.id_movimiento, "| id_usuario:", session.user.id);
-
-    const { data: updatedRow, error } = await supabase
-      .from('movimientos')
-      .update({
-        id_tipo: Number(editTipo),
-        monto_transaccion: montoN,
-        metodo_pago: editMetodo,
-        id_categoria: finalCatId,
-        fecha_operacion: editFecha,
-        descripcion_detalle: editDescripcion.trim(),
-      })
-      .eq('id_movimiento', editMov.id_movimiento)
-      .eq('id_usuario', session.user.id)
-      .select('id_movimiento')
-      .single();
-
-    console.log("[Flux] Resultado UPDATE:", updatedRow, error);
-
-    if (error) {
-      toast("No se pudo actualizar el movimiento.", "err");
-    } else if (!updatedRow) {
-      toast("No se encontró el movimiento o no tienes permiso para actualizarlo.", "err");
-    } else {
-      toast("Movimiento actualizado correctamente.");
-      setEditMov(null);
-      fetchData();
-    }
-    setIsEditSubmitting(false);
-  };
-
-  // ── Estados modal de confirmación (reemplaza window.confirm) ────────────────
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingMov, setPendingMov] = useState<any | null>(null);
-
-  // Paso 1: pide confirmación visual (sin ejecutar nada todavía)
-  const handleEliminar = (mov: any) => {
-    setPendingMov(mov);
-    setConfirmOpen(true);
-  };
-
-  // Paso 2: usuario confirmó → ejecutar DELETE real
-  const confirmarEliminar = async () => {
-    setConfirmOpen(false);
-    if (!pendingMov) return;
-    const mov = pendingMov;
-    setPendingMov(null);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    console.log("[Flux] Eliminando id_movimiento:", mov.id_movimiento, "| id_usuario:", session.user.id);
-
-    const { data: deletedRows, error } = await supabase
-      .from('movimientos')
-      .delete()
-      .eq('id_movimiento', mov.id_movimiento)
-      .eq('id_usuario', session.user.id)
-      .select('id_movimiento');
-
-    console.log("[Flux] Resultado DELETE:", deletedRows, error);
-
-    if (error) {
-      toast("No se pudo eliminar el movimiento.", "err");
-    } else if (!deletedRows || deletedRows.length === 0) {
-      toast("No se encontró el movimiento o no tienes permiso para eliminarlo.", "err");
-    } else {
-      toast("Movimiento eliminado correctamente.");
-      fetchData();
-    }
-  };
-
-  // Paso 3: usuario canceló
-  const cancelarEliminar = () => {
-    setConfirmOpen(false);
-    setPendingMov(null);
-  };
-
-  // Funciones de carga
-  const fetchData = async () => {
-    setLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    // 1. Cargar Movimientos (ahora incluimos es_automatico para mostrar el ⚡)
-    const { data: movData, error: movError } = await supabase
-      .from('movimientos')
-      .select('id_movimiento, monto_transaccion, descripcion_detalle, fecha_operacion, id_tipo, metodo_pago, es_automatico, categorias(nombre_categoria)')
-      .order('fecha_operacion', { ascending: false });
-
-    // 2. Cargar Categorías
-    const { data: catData, error: catError } = await supabase
-      .from('categorias')
-      .select('id_categoria, nombre_categoria')
-      .or(`id_usuario.eq.${session.user.id},id_usuario.is.null`);
-
-    if (movData && !movError) setMovimientos(movData);
-    if (catData && !catError) setCategoriasLista(catData);
-
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line
-  }, []);
-
-  // Función para guardar el registro 
-  const handleGuardar = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    let finalCategoriaId = null;
-
-    if (categoria.trim() !== "") {
-      const nombreCat = categoria.trim();
-      const catExistente = categoriasLista.find(
-        (c) => c.nombre_categoria.toLowerCase() === nombreCat.toLowerCase()
-      );
-
-      if (catExistente) {
-        finalCategoriaId = catExistente.id_categoria;
-      } else {
-        const { data: newCat, error: catError } = await supabase
-          .from('categorias')
-          .insert([{
-            id_usuario: session.user.id,
-            nombre_categoria: nombreCat
-          }])
-          .select('id_categoria')
-          .single();
-
-        if (newCat && !catError) {
-          finalCategoriaId = newCat.id_categoria;
-        }
-      }
-    }
-
-    // 1. Insertar el Movimiento Base
-    // Al ser una inserción manual humana, el DB default para es_automatico es FALSE, lo cual es perfecto.
-    const { error: movError } = await supabase.from('movimientos').insert([
-      {
-        id_usuario: session.user.id,
-        id_tipo: parseInt(tipoMovimiento),
-        id_categoria: finalCategoriaId,
-        monto_transaccion: parseFloat(monto),
-        metodo_pago: metodoPago,
-        descripcion_detalle: descripcion,
-        fecha_operacion: fechaOperacion,
-        es_automatico: isRecurrente
-      }
-    ]);
-
-    if (movError) {
-      alert("Error en módulo Movimientos: " + movError.message);
-      setIsSubmitting(false);
-      return;
-    }
-
-    // 2. Insertar Recurrencia si está activada
-    if (isRecurrente) {
-      const { error: recError } = await supabase.from('config_recurrencias').insert([
-        {
-          id_usuario: session.user.id,
-          id_tipo: parseInt(tipoMovimiento),
-          id_categoria: finalCategoriaId,
-          monto_recurrente: parseFloat(monto),
-          frecuencia: frecuencia,
-          dia_ejecucion: parseInt(diaEjecucion) || 1,
-          fecha_inicio: new Date().toISOString().split('T')[0],
-          fecha_fin: fechaFin ? fechaFin : null
-        }
+  const fetchData = useCallback(async () => {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) throw new Error('No se pudo comprobar tu sesión.');
+      if (!session) { router.replace('/login'); setLoading(false); return; }
+      setLoading(true);
+      setLoadError('');
+      const [movements, profile, categories] = await Promise.all([
+        reader.movements(session.user.id), reader.profile(session.user.id),
+        readAllPages(async (from, to) => {
+          const { data, error } = await supabase.from('categorias').select('id_categoria, nombre_categoria')
+            .or('id_usuario.eq.' + session.user.id + ',id_usuario.is.null')
+            .order('id_categoria', { ascending: true }).range(from, to).returns<Category[]>();
+          if (error || !data) throw new Error('No se pudieron cargar las categorías.');
+          return data;
+        }),
       ]);
-      if (recError) alert("El movimiento se guardó pero falló la recurrencia: " + recError.message);
+      setMovimientos(movements);
+      setCurrency(profile.codigo_moneda);
+      setCategoriasLista(categories);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar los movimientos.');
+    } finally {
+      setLoading(false);
     }
+  }, [router]);
 
-    // Limpiar modal y recargar tabla
-    setIsModalOpen(false);
-    setMonto("");
-    setDescripcion("");
-    setCategoria("");
-    setMetodoPago("Efectivo");
-    setFechaOperacion(new Date().toISOString().split('T')[0]);
-    setIsRecurrente(false);
-    setFrecuencia("Mensual");
-    setDiaEjecucion("1");
-    setFechaFin("");
-    fetchData();
-    setIsSubmitting(false);
-  };
+  useEffect(() => { void fetchData(); }, [fetchData]);
+
+  async function resolveCategory(name: string, userId: string): Promise<string | null> {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const existing = categoriasLista.find(item => item.nombre_categoria.toLowerCase() === trimmed.toLowerCase());
+    if (existing) return existing.id_categoria;
+    const { data, error } = await supabase.from('categorias')
+      .insert([{ id_usuario: userId, nombre_categoria: trimmed }]).select('id_categoria').single();
+    if (error || !data) throw new Error('No se pudo guardar la categoría. Revisa los datos e intenta de nuevo.');
+    return data.id_categoria;
+  }
+
+  function validateDate(date: string) {
+    if (!isCivilDate(date)) throw new Error('Selecciona una fecha válida.');
+    if (date > civilToday()) throw new Error('Registra la operación cuando ocurra. Usa una recurrencia para planificarla.');
+  }
+
+  function abrirEditar(movement: Movement) {
+    setEditMov(movement);
+    setEditTipo(String(movement.id_tipo));
+    setEditMonto(String(movement.monto_transaccion));
+    setEditDescripcion(movement.descripcion_detalle ?? '');
+    setEditMetodo(movement.metodo_pago ?? 'Efectivo');
+    setEditCategoria(movement.categorias?.nombre_categoria ?? '');
+    setEditFecha(movement.fecha_operacion.split('T')[0]);
+  }
+
+  async function handleActualizar(event: React.FormEvent) {
+    event.preventDefault();
+    if (!editMov || submitLock.current) return;
+    submitLock.current = true;
+    setIsEditSubmitting(true);
+    try {
+      const cents = amountToCents(editMonto);
+      validateDate(editFecha);
+      if (!editDescripcion.trim()) throw new Error('La descripción es obligatoria.');
+      if (![1, 2, 3, 4].includes(Number(editTipo))) throw new Error('Tipo de movimiento inválido.');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.replace('/login'); return; }
+      const categoryId = await resolveCategory(editCategoria, session.user.id);
+      const { data, error } = await supabase.from('movimientos').update({
+        id_tipo: Number(editTipo), monto_transaccion: centsToDecimal(cents),
+        metodo_pago: editMetodo, id_categoria: categoryId, fecha_operacion: editFecha,
+        descripcion_detalle: editDescripcion.trim(),
+      }).eq('id_movimiento', editMov.id_movimiento).eq('id_usuario', session.user.id).select('id_movimiento').single();
+      if (error || !data) throw new Error('No se pudo actualizar el movimiento. Comprueba tus permisos.');
+      setEditMov(null);
+      toast('Movimiento actualizado.');
+      await fetchData();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'No se pudo actualizar el movimiento.', 'err');
+    } finally {
+      submitLock.current = false;
+      setIsEditSubmitting(false);
+    }
+  }
+
+  function handleEliminar(movement: Movement) {
+    setPendingMov(movement);
+    setConfirmOpen(true);
+  }
+
+  async function confirmarEliminar() {
+    setConfirmOpen(false);
+    if (!pendingMov || submitLock.current) return;
+    const movement = pendingMov;
+    submitLock.current = true;
+    setPendingMov(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.replace('/login'); return; }
+      const { data, error } = await supabase.from('movimientos').delete()
+        .eq('id_movimiento', movement.id_movimiento).eq('id_usuario', session.user.id).select('id_movimiento');
+      if (error || !data?.length) throw new Error('No se pudo eliminar el movimiento. Comprueba tus permisos.');
+      toast('Movimiento eliminado.');
+      await fetchData();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'No se pudo eliminar el movimiento.', 'err');
+    } finally {
+      submitLock.current = false;
+    }
+  }
+
+  function cancelarEliminar() { setConfirmOpen(false); setPendingMov(null); }
+
+  async function handleGuardar(event: React.FormEvent) {
+    event.preventDefault();
+    if (submitLock.current) return;
+    submitLock.current = true;
+    setIsSubmitting(true);
+    try {
+      const cents = amountToCents(monto);
+      validateDate(fechaOperacion);
+      if (!descripcion.trim()) throw new Error('La descripción es obligatoria.');
+      if (!['1', '2'].includes(tipoMovimiento)) throw new Error('Tipo de movimiento inválido.');
+      if (isRecurrente) {
+        if (!['Diario', 'Semanal', 'Mensual', 'Anual'].includes(frecuencia)) throw new Error('Frecuencia inválida.');
+        if (fechaFin && (!isCivilDate(fechaFin) || fechaFin < fechaOperacion)) throw new Error('La fecha final no puede ser anterior al inicio.');
+        if (frecuencia === 'Mensual' && (!Number.isInteger(Number(diaEjecucion)) || Number(diaEjecucion) < 1 || Number(diaEjecucion) > 31)) {
+          throw new Error('El día mensual debe estar entre 1 y 31.');
+        }
+      }
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.replace('/login'); return; }
+      const categoryId = await resolveCategory(categoria, session.user.id);
+      const { error } = await supabase.from('movimientos').insert([{
+        id_usuario: session.user.id, id_tipo: Number(tipoMovimiento), id_categoria: categoryId,
+        monto_transaccion: centsToDecimal(cents), metodo_pago: metodoPago, fecha_operacion: fechaOperacion,
+        descripcion_detalle: descripcion.trim(), es_automatico: false,
+      }]);
+      if (error) throw new Error('No se pudo guardar el movimiento.');
+      let recurrenceFailed = false;
+      if (isRecurrente) {
+        const { error: recurrenceError } = await supabase.from('config_recurrencias').insert([{
+          id_usuario: session.user.id, id_tipo: Number(tipoMovimiento), id_categoria: categoryId,
+          monto_recurrente: centsToDecimal(cents), frecuencia,
+          dia_ejecucion: frecuencia === 'Mensual' ? Number(diaEjecucion) : Number(fechaOperacion.slice(8, 10)),
+          fecha_inicio: fechaOperacion, fecha_fin: fechaFin || null,
+        }]);
+        recurrenceFailed = Boolean(recurrenceError);
+      }
+      setIsModalOpen(false);
+      setMonto(''); setDescripcion(''); setCategoria(''); setMetodoPago('Efectivo');
+      setFechaOperacion(civilToday()); setIsRecurrente(false); setFrecuencia('Mensual');
+      setDiaEjecucion('1'); setFechaFin('');
+      toast(recurrenceFailed ? 'El movimiento se guardó, pero la regla no pudo crearse. No repitas el movimiento.' : 'Movimiento guardado.',
+        recurrenceFailed ? 'err' : 'ok');
+      await fetchData();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'No se pudo guardar el movimiento.', 'err');
+    } finally {
+      submitLock.current = false;
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-in fade-in duration-500 relative">
 
+      {loadError && <div role="alert" className="mb-4 p-4 text-red-300 border border-red-400/30 rounded-xl">
+        {loadError}<button className="block underline mt-2" onClick={() => void fetchData()}>Volver a cargar</button>
+      </div>}
       {/* Header de Interfaz */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
         <div>
@@ -370,7 +302,7 @@ export default function MovimientosPage() {
             </div>
             <span className="font-mono text-[10px] tracking-widest uppercase animate-pulse">Desencriptando Módulo...</span>
           </div>
-        ) : movimientos.length === 0 ? (
+        ) : loadError ? <p className="p-8 text-zinc-400">No se muestran cifras incompletas. Vuelve a cargar los datos.</p> : movimientos.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-20 gap-2 text-zinc-500 bg-zinc-900/10">
             <span className="font-mono text-sm tracking-widest uppercase text-zinc-600">No hay registros activos</span>
             <span className="font-mono text-[9px] tracking-widest">Inyecta un nuevo registro para iniciar estadística</span>
@@ -430,7 +362,8 @@ export default function MovimientosPage() {
                     const [year, month, day] = mov.fecha_operacion.split('T')[0].split('-');
                     const fechaOp = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
                     const fecha = fechaOp.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
-                    const isIngreso = mov.id_tipo === 1;
+                    const sign = movementSign(mov.id_tipo);
+                    const isIngreso = sign > 0;
                     const catNombre = mov.categorias?.nombre_categoria || "Sin categoría";
 
                     return (
@@ -457,7 +390,7 @@ export default function MovimientosPage() {
                           {mov.metodo_pago || 'Desconocido'}
                         </td>
                         <td className={`p-4 text-right font-mono font-bold tracking-tight text-lg ${isIngreso ? 'text-[#39FF14]' : 'text-white'}`}>
-                          {isIngreso ? '+' : '-'}${mov.monto_transaccion.toLocaleString()}
+                          {sign > 0 ? '+' : sign < 0 ? '-' : ''}{formatAmount(mov.monto_transaccion, currency)}
                         </td>
                         {/* Columna Acciones */}
                         <td className="p-4 text-center">
@@ -522,7 +455,7 @@ export default function MovimientosPage() {
                 <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Monto Transado</label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 font-bold">$</span>
-                  <input type="number" step="0.01" required value={monto} onChange={(e) => setMonto(e.target.value)}
+                  <input type="number" min="0.01" max="9999999999999.99" step="0.01" required value={monto} onChange={(e) => setMonto(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-10 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all font-mono font-bold"
                     placeholder="0.00" />
                 </div>
@@ -565,7 +498,7 @@ export default function MovimientosPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Fecha Operación</label>
-                  <input type="date" required value={fechaOperacion} onChange={(e) => setFechaOperacion(e.target.value)}
+                  <input type="date" required max={civilToday()} value={fechaOperacion} onChange={(e) => setFechaOperacion(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#39FF14] transition-all font-medium text-xs [color-scheme:dark]" />
                 </div>
                 <div>
@@ -585,7 +518,7 @@ export default function MovimientosPage() {
                   </div>
                   <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
                     <Repeat size={14} className={isRecurrente ? "text-[#39FF14]" : "text-zinc-600"} />
-                    ¿Automatizar Operación?
+                    ¿Programar repetición?
                   </span>
                 </label>
 
@@ -606,9 +539,9 @@ export default function MovimientosPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-1">
-                          <Calendar size={12} /> Día del mes
+                          <Calendar size={12} /> Día del mes (mensual)
                         </label>
-                        <input type="number" min="1" max="31" required value={diaEjecucion} onChange={(e) => setDiaEjecucion(e.target.value)}
+                        <input type="number" min="1" max="31" disabled={frecuencia !== "Mensual"} required={frecuencia === "Mensual"} value={diaEjecucion} onChange={(e) => setDiaEjecucion(e.target.value)}
                           className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white outline-none text-xs"
                           placeholder="1-31" />
                       </div>
@@ -620,7 +553,7 @@ export default function MovimientosPage() {
                     </div>
 
                     <p className="text-[9px] text-zinc-500 font-mono mt-1 tracking-widest leading-relaxed">
-                      Se programará en tu <span className="text-[#39FF14]">config_recurrencias</span>. El sistema insertará estas copias a futuro marcadas como automáticas <Zap size={8} className="inline text-[#39FF14] fill-[#39FF14] mb-0.5" />.
+                      La regla aparecerá en el calendario como proyección. El registro automático está temporalmente desactivado; registra cada pago o cobro cuando ocurra.
                     </p>
                   </div>
                 )}
@@ -689,7 +622,7 @@ export default function MovimientosPage() {
                 <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Monto *</label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 font-bold">$</span>
-                  <input type="number" step="0.01" required value={editMonto} onChange={e => setEditMonto(e.target.value)}
+                  <input type="number" min="0.01" max="9999999999999.99" step="0.01" required value={editMonto} onChange={e => setEditMonto(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-10 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all font-mono font-bold"
                     placeholder="0.00" />
                 </div>
@@ -722,7 +655,7 @@ export default function MovimientosPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Fecha *</label>
-                  <input type="date" required value={editFecha} onChange={e => setEditFecha(e.target.value)}
+                  <input type="date" required max={civilToday()} value={editFecha} onChange={e => setEditFecha(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#39FF14] transition-all font-medium text-xs [color-scheme:dark]" />
                 </div>
                 <div>

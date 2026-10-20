@@ -1,5 +1,7 @@
 "use client";
 import { Bell, UserCircle } from 'lucide-react';
+import Image from 'next/image';
+import { formatAmount } from '@/lib/finance';
 
 interface HeaderProps {
   nickname: string;
@@ -29,7 +31,7 @@ export default function DashboardHeader({ nickname, saldo, moneda, avatarUrl }: 
         <div className="text-right flex-1 md:flex-none">
           <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Capital Activo</p>
           <p className={`text-4xl font-black tracking-tighter ${saldo >= 0 ? 'text-white' : 'text-[#ff3939]'}`}>
-            {saldo.toLocaleString()} <span className="text-lg font-medium text-[#39FF14]">{moneda}</span>
+            {formatAmount(saldo, moneda)}
           </p>
         </div>
 
@@ -41,7 +43,7 @@ export default function DashboardHeader({ nickname, saldo, moneda, avatarUrl }: 
 
           <div className="flex items-center gap-3 bg-zinc-900 p-1.5 pr-5 rounded-full border border-zinc-800">
             {avatarUrl ? (
-              <img src={avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full border border-zinc-700 bg-black" />
+              <Image src={avatarUrl} alt="Avatar" width={40} height={40} unoptimized className="w-10 h-10 rounded-full border border-zinc-700 bg-black" />
             ) : (
               <UserCircle size={40} className="text-zinc-500" />
             )}

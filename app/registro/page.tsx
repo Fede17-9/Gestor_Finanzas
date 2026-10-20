@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Infinity } from "lucide-react";
+import Image from 'next/image';
 
 // Lista de Avatares sencillos
 const AVATARS = [
@@ -94,7 +95,7 @@ export default function RegistroPage() {
                   avatar === url ? "border-[#39FF14] scale-110 shadow-[0_0_15px_rgba(57,255,20,0.5)] opacity-100" : "border-zinc-800 hover:border-zinc-600 opacity-50 hover:opacity-100"
                 }`}
               >
-                <img src={url} alt="Avatar option" className="w-full h-full object-cover bg-zinc-900" />
+                <Image src={url} alt="Avatar option" width={48} height={48} unoptimized className="w-full h-full object-cover bg-zinc-900" />
               </button>
             ))}
           </div>
