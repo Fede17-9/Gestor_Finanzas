@@ -1,0 +1,84 @@
+-- 1. Tabla de Usuarios (Ampliando la de Auth de Supabase)
+CREATE TABLE public.usuarios (
+    id_usuario UUID PRIMARY KEY REFERENCES auth.users ON DELETE CASCADE,
+    nombre_completo TEXT NOT NULL,
+    username TEXT UNIQUE NOT NULL,
+    codigo_moneda VARCHAR(5) DEFAULT 'USD',
+    url_avatar TEXT,
+    fecha_registro TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- 2. Tipos de Movimiento
+CREATE TABLE public.tipos_movimiento (
+    id_tipo SERIAL PRIMARY KEY,
+    nombre_tipo TEXT NOT NULL, -- 'Ingreso', 'Egreso', etc.
+    descripcion TEXT,
+    signo_contable INT NOT NULL -- 1 para suma, -1 para resta
+);
+
+-- 3. Categorías
+CREATE TABLE public.categorias (
+    id_categoria UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id_usuario UUID REFERENCES public.usuarios(id_usuario) ON DELETE CASCADE,
+    nombre_categoria TEXT NOT NULL,
+    codigo_color VARCHAR(7), -- Hexadecimal
+    slug_icono TEXT,
+    UNIQUE(id_usuario, nombre_categoria)
+);
+
+-- 4. Movimientos (La tabla principal)
+CREATE TABLE public.movimientos (
+    id_movimiento UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id_usuario UUID NOT NULL REFERENCES public.usuarios(id_usuario) ON DELETE CASCADE,
+    id_tipo INT NOT NULL REFERENCES public.tipos_movimiento(id_tipo),
+    id_categoria UUID REFERENCES public.categorias(id_categoria) ON DELETE SET NULL,
+    monto_transaccion DECIMAL(15,2) NOT NULL,
+    metodo_pago TEXT,
+    fecha_operacion TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    descripcion_detalle TEXT,
+    es_automatico BOOLEAN DEFAULT FALSE
+);
+
+-- 5. Configuración de Recurrencias
+CREATE TABLE public.config_recurrencias (
+    id_recurrencia UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id_usuario UUID NOT NULL REFERENCES public.usuarios(id_usuario) ON DELETE CASCADE,
+    id_tipo INT NOT NULL REFERENCES public.tipos_movimiento(id_tipo),
+    id_categoria UUID REFERENCES public.categorias(id_categoria),
+    monto_recurrente DECIMAL(15,2) NOT NULL,
+    frecuencia TEXT CHECK (frecuencia IN ('Diario', 'Semanal', 'Mensual', 'Anual')),
+    dia_ejecucion INT,
+    fecha_inicio DATE NOT NULL,
+    fecha_fin DATE,
+    estado_activo BOOLEAN DEFAULT TRUE
+);
+
+-- 6. Presupuestos Mensuales
+CREATE TABLE public.presupuestos_mensuales (
+    id_presupuesto UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id_usuario UUID NOT NULL REFERENCES public.usuarios(id_usuario) ON DELETE CASCADE,
+    id_categoria UUID REFERENCES public.categorias(id_categoria) ON DELETE CASCADE,
+    monto_limite DECIMAL(15,2) NOT NULL,
+    mes_calendario INT CHECK (mes_calendario BETWEEN 1 AND 12),
+    anio_calendario INT,
+    porcentaje_alerta INT DEFAULT 80
+);
+
+-- 7. Metas de Ahorro
+CREATE TABLE public.metas_ahorro (
+    id_meta UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id_usuario UUID NOT NULL REFERENCES public.usuarios(id_usuario) ON DELETE CASCADE,
+    nombre_meta TEXT NOT NULL,
+    monto_objetivo DECIMAL(15,2) NOT NULL,
+    monto_actual DECIMAL(15,2) DEFAULT 0,
+    fecha_proyectada DATE,
+    prioridad_nivel TEXT CHECK (prioridad_nivel IN ('Bajo', 'Medio', 'Alto')),
+    estado_meta TEXT DEFAULT 'En Progreso'
+);
+
+-- Datos iniciales básicos para Tipos de Movimiento
+INSERT INTO public.tipos_movimiento (nombre_tipo, descripcion, signo_contable) VALUES
+('Ingreso', 'Entrada de dinero a la cuenta', 1),
+('Egreso', 'Gasto o salida de dinero', -1),
+('Inversión', 'Dinero destinado a activos', -1),
+('Traspaso', 'Movimiento entre cuentas propias', 0);
