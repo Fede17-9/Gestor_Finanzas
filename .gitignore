@@ -40,3 +40,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Supabase local state and private database exports (migrations stay tracked)
+/supabase/.temp/
+/supabase/.branches/
+/supabase/backups/
