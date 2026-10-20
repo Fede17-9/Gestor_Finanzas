@@ -1,10 +1,14 @@
 # Validación de la auditoría
 
-## Resultado vigente tras la primera entrega
+## Resultado vigente tras la segunda entrega local
 
-El **20 de octubre de 2026** se implementaron las correcciones descritas en [ETAPA_1.md](ETAPA_1.md). Resultado actual: **22 pruebas aprobadas; TypeScript, lint sin errores/advertencias y build aprobados**. El build requiere red para descargar Geist. El servidor de producción respondió HTTP 200 en las nueve rutas existentes.
+El **20 de octubre de 2026** se implementaron [ETAPA_1.md](ETAPA_1.md) y la parte local de [ETAPA_2.md](ETAPA_2.md). Resultado actual con Next.js 16.4.2: **48 pruebas aprobadas; TypeScript, lint sin errores/advertencias y build aprobados**. El build requiere red para descargar Geist. El servidor de producción en el puerto 3100 respondió HTTP 200 en las trece rutas, incluidas recuperación, callback y completar perfil.
 
-Los reportes ya no escriben datos al montar. La automatización anterior está desactivada; Supabase sigue integrado. No se modificó ni certificó la base remota y las pruebas del SDK usan respuestas simuladas. La comprobación HTTP no valida una sesión autenticada ni RLS.
+Los reportes ya no escriben datos al montar. La automatización anterior está desactivada; Supabase sigue integrado. Las pruebas se distribuyen en 22 de finanzas/reportes, 12 de Auth con cliente inyectado y 14 de PostgreSQL/PGlite con roles e identidad simulados. La suite SQL se volvió a ejecutar tras ajustar la selección de restricciones por OID y pasó sus 14 casos.
+
+No se modificó ni certificó la base remota. HTTP 200 solo verifica disponibilidad de las rutas, no autenticación, redirecciones en cliente, RLS remoto ni entrega de correo. Se intentó la revisión visual con la herramienta de navegador, pero el entorno no expone ningún navegador conectado: no se afirma validación visual ni móvil. Tampoco se enviaron correos ni crearon usuarios en Supabase.
+
+Auditoría npm: **0 vulnerabilidades en dependencias de producción**, 5 alertas altas en la cadena de ESLint de desarrollo, documentadas en [ETAPA_2.md](ETAPA_2.md). No se usó actualización forzada incompatible. CI preparado con claves públicas ficticias, todavía sin ejecución confirmada en GitHub.
 
 ## Registro histórico: auditoría inicial
 

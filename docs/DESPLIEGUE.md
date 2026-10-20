@@ -20,14 +20,14 @@ Variables consumidas por el código:
 
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 ```
 
-La segunda conserva un nombre heredado. Para nuevos entornos, preferir una clave **publishable**, planificando renombrar a `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` en código/documentación en un mismo cambio. Nunca poner `secret` o `service_role` en variables públicas. Supabase anuncia deprecación de claves heredadas `anon`/`service_role` para finales de 2026. [Claves oficiales](https://supabase.com/docs/guides/getting-started/api-keys).
+El código ya admite la clave **publishable** y conserva `NEXT_PUBLIC_SUPABASE_ANON_KEY` como alternativa para instalaciones existentes. Si ambas están presentes tiene prioridad publishable. Nunca poner `secret` o `service_role` en variables públicas. [Claves oficiales](https://supabase.com/docs/guides/getting-started/api-keys).
 
 `NEXT_PUBLIC_*` llega al navegador y se incorpora al build: no es un secreto. Cambiar estos valores requiere recompilar para actualizar la web publicada. La protección de datos depende de Auth/RLS. [Variables Next.js](https://nextjs.org/docs/app/guides/environment-variables).
 
-La primera entrega pasa pruebas, tipos, lint y build. El borrado y la generación automática desde el dashboard se retiraron. Falta verificar esquema/RLS y flujos remotos antes de declarar la aplicación lista para producción. Ver [validación](VALIDACION.md) y [cambios de etapa 1](ETAPA_1.md).
+Las dos entregas locales pasan 48 pruebas, tipos, lint y build. El borrado y la generación automática desde el dashboard se retiraron. Las migraciones y nuevos flujos Auth están versionados, pendientes de validar contra el servicio real. Antes de producción seguir [procedimiento de base de datos](../supabase/README.md), [configuración de Auth](ETAPA_2.md) y [validación](VALIDACION.md).
 
 ## Alojamiento de bajo costo
 

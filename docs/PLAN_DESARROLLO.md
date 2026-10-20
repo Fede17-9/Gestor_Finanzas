@@ -6,7 +6,9 @@ Referencia: **20 de octubre de 2026**. Este documento describe trabajo pendiente
 
 La primera entrega de la etapa 1 ya está aplicada en la aplicación: reportes sin escrituras, importes/fechas compartidos, proyecciones corregidas y pruebas, tipos, lint y build aprobados. Supabase continúa siendo el backend existente. Ver [detalle y límites](ETAPA_1.md).
 
-El refuerzo de restricciones en PostgreSQL y la validación del servicio remoto siguen pendientes de la etapa 2. El nuevo motor con pendientes/confirmaciones de la etapa 3 aún no está implementado; el automático anterior se retiró para evitar escrituras incorrectas.
+La etapa 2 tiene implementación local: migraciones, restricciones/RLS con 14 pruebas en PostgreSQL, registro confirmado/recuperación/completar perfil con 12 pruebas y CI preparado. El total vigente es 48 pruebas; tipos, lint y build pasan. Falta inspeccionar y respaldar Supabase existente, reconciliar/aplicar migraciones, generar tipos reales y validar API/correos remotos. Ver [segunda entrega](ETAPA_2.md).
+
+El nuevo motor con pendientes/confirmaciones de la etapa 3 aún no está implementado; el automático anterior se retiró para evitar escrituras incorrectas. Se mantiene la secuencia de cierre de etapas para no construir automatizaciones sobre un esquema remoto sin verificar.
 
 ## Decisiones acordadas
 

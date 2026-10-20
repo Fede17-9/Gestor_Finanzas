@@ -6,28 +6,30 @@ El proyecto está en fase de **MVP en desarrollo**. El objetivo es terminar un r
 
 ## Estado al 20 de octubre de 2026
 
-Supabase **ya está integrado** para autenticación y datos. La primera entrega de integridad/compilación está implementada en la aplicación:
+Supabase **ya está integrado** para autenticación y datos. La primera entrega de integridad y la implementación local de acceso privado están aplicadas:
 
 - Dashboard y calendario consultan datos sin crear ni borrar movimientos al cargar.
 - Los gastos legítimos con igual categoría/importe/fecha se conservan.
 - Importes calculados en centavos y validados; fecha «hoy» de Bogotá; proyecciones con vigencia y frecuencias coherentes.
 - Historial paginado y errores visibles, sin presentar totales parciales como si fueran completos.
-- **22 pruebas, TypeScript, lint sin errores/advertencias y build aprobados.**
+- Registro con confirmación de correo, recuperación de contraseña y completar perfil; dashboard protegido antes de montar sus pantallas.
+- Migraciones transaccionales, permisos por propietario y pruebas de aislamiento en PostgreSQL local, pendientes de contrastar/aplicar en Supabase remoto.
+- **48 pruebas, TypeScript, lint sin errores/advertencias y build aprobados.** CI preparado para GitHub Actions.
 
 El registro automático anterior se retiró. Las reglas se muestran como proyecciones separadas de las operaciones registradas; las ocurrencias pendientes y confirmaciones configurables se construirán en la etapa 3.
 
-Aún faltan restricciones/migraciones y comprobación de RLS en Supabase remoto, presupuestos, historial de aportes a metas, presentación móvil y beta. Cambiar la moneda sin conversión está bloqueado; se selecciona al registrarse. La portada `/` sigue siendo la plantilla de Next.js.
+Aún faltan inspección, respaldo y validación de migraciones/RLS/Auth en Supabase remoto, presupuestos, historial de aportes a metas, presentación móvil y beta. Cambiar la moneda sin conversión está bloqueado; se selecciona al registrarse. La portada `/` dirige al acceso.
 
-Consulta [primera entrega y límites](docs/ETAPA_1.md) y [validación actual](docs/VALIDACION.md). El [diagnóstico inicial](docs/ESTADO_PROYECTO.md) se conserva como fotografía anterior a las correcciones. Ningún dato remoto se modificó durante esta implementación.
+Consulta [primera entrega](docs/ETAPA_1.md), [segunda entrega y pendientes remotos](docs/ETAPA_2.md) y [validación actual](docs/VALIDACION.md). El [diagnóstico inicial](docs/ESTADO_PROYECTO.md) se conserva como fotografía anterior a las correcciones. Ningún dato remoto se modificó durante esta implementación.
 
 ## Tecnología
 
-- Next.js 16.1.7 con App Router y React 19.2.3.
+- Next.js 16.4.2 con App Router y React 19.2.3.
 - TypeScript y Tailwind CSS 4.
 - Supabase Auth y PostgreSQL; acceso desde el navegador mediante `lib/supabase.ts`.
 - Recharts para gráficos y Lucide para iconos.
 
-El proyecto requiere **Node.js 24.x**, declarado en `engines` y `.nvmrc`; se validó con 24.19.0. Las pruebas usan el runner nativo de Node, sin nuevas dependencias. Versiones y scripts en [package.json](package.json), resolución en `package-lock.json`.
+El proyecto requiere **Node.js 24.x**, declarado en `engines` y `.nvmrc`; se validó con 24.19.0. Las pruebas usan el runner nativo de Node y PGlite para PostgreSQL local en memoria, solo en desarrollo. Versiones y scripts en [package.json](package.json), resolución en `package-lock.json`.
 
 ## Ejecutar en local
 
@@ -46,12 +48,12 @@ Configura en `.env.local` estas variables con los valores de tu proyecto de prue
 
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 ```
 
-La segunda variable conserva el nombre que utiliza el cliente actual. Usa una clave pública apta para navegador; nunca una clave secreta o `service_role`. Los datos deben protegerse mediante políticas RLS comprobadas en Supabase.
+El nombre heredado `NEXT_PUBLIC_SUPABASE_ANON_KEY` sigue funcionando para tu configuración existente. La clave publishable tiene prioridad si se configuran ambas. Usa una clave pública apta para navegador; nunca una clave secreta o `service_role`. Los datos deben protegerse mediante políticas RLS comprobadas en Supabase.
 
-El esquema histórico está en [Referencia de la base de datos](docs/referencia/base_de_datos.txt). No lo ejecutes sobre una base con datos: no incluye toda la configuración necesaria para reproducir y proteger el servicio. Antes de probar los flujos, prepara y verifica el esquema, los catálogos, las políticas RLS y la configuración de autenticación en el entorno de pruebas. Esa instalación todavía necesita convertirse en migraciones versionadas.
+El esquema histórico está en [Referencia de la base de datos](docs/referencia/base_de_datos.txt). Las migraciones y el procedimiento seguro están en [supabase/README.md](supabase/README.md). No ejecutes la baseline sobre tu base existente: primero inspección, respaldo y comparación en una copia. La configuración de URLs y correo de Auth se detalla en [ETAPA_2.md](docs/ETAPA_2.md).
 
 Después inicia el servidor:
 
@@ -59,7 +61,7 @@ Después inicia el servidor:
 npm run dev
 ```
 
-Abre [http://localhost:3000/login](http://localhost:3000/login) o [http://localhost:3000/registro](http://localhost:3000/registro). La portada `http://localhost:3000/` continúa siendo la plantilla inicial. Que una pantalla cargue en desarrollo no demuestra que la compilación de producción o sus operaciones financieras sean correctas.
+Abre [http://localhost:3000/login](http://localhost:3000/login) o [http://localhost:3000/registro](http://localhost:3000/registro). Deja la terminal abierta: los cambios guardados se reflejan automáticamente. Detén el servidor con `Ctrl+C`. Que una pantalla cargue no demuestra que sus operaciones financieras sean correctas.
 
 ## Comprobaciones
 
@@ -72,11 +74,12 @@ npm run lint
 npm run build
 ```
 
-**Las cuatro comprobaciones pasan en esta entrega.** El build descarga las fuentes Geist y necesita acceso de red. También se comprobó el arranque de producción y HTTP 200 en las nueve rutas. Esto no certifica RLS ni los formularios contra la base real; consulta [validación y límites](docs/VALIDACION.md).
+**Las cuatro comprobaciones pasan en esta entrega.** El build descarga las fuentes Geist y necesita acceso de red. También se comprobó el arranque de producción y HTTP 200 en las trece rutas. Esto no certifica el comportamiento del navegador, RLS ni los formularios contra la base real; consulta [validación y límites](docs/VALIDACION.md).
 
 ## Documentación y continuación
 
 - [Primera entrega](docs/ETAPA_1.md): correcciones, pruebas y pendientes concretos.
+- [Segunda entrega](docs/ETAPA_2.md): migraciones, acceso privado, recuperación y configuración pendiente de Supabase.
 - [Estado del proyecto](docs/ESTADO_PROYECTO.md): auditoría inicial; arquitectura, pantallas reales, base documentada y problemas priorizados.
 - [Plan de desarrollo](docs/PLAN_DESARROLLO.md): alcance personal, fases y criterios para completar el producto.
 - [Plan de despliegue](docs/DESPLIEGUE.md): entorno privado, demo pública y preparación para publicación.
@@ -84,7 +87,7 @@ npm run build
 - [Validación técnica](docs/VALIDACION.md): comprobaciones ejecutadas y límites de la auditoría.
 - [SQL de referencia](docs/referencia/base_de_datos.txt) e [historial de desarrollo](docs/referencia/historial_desarrollo.md): antecedentes conservados; no equivalen al estado verificado del servicio remoto.
 
-El siguiente bloque es inspeccionar/versionar la base de datos y sus políticas. Después se implementarán las ocurrencias pendientes y su confirmación manual/automática. La publicación para evaluadores tendrá cuentas propias y datos ficticios, separada del uso personal.
+El siguiente bloque es inspeccionar, respaldar y validar las migraciones y políticas contra Supabase existente. Después se implementarán las ocurrencias pendientes y su confirmación manual/automática. La publicación para evaluadores tendrá cuentas propias y datos ficticios, separada del uso personal.
 
 ## Publicación prevista
 
