@@ -16,24 +16,24 @@ export default function MovimientosPage() {
   const [descripcion, setDescripcion] = useState("");
   const [tipoMovimiento, setTipoMovimiento] = useState("2"); // 2 = Egreso por defecto
   const [metodoPago, setMetodoPago] = useState("Efectivo");
-  const [categoria, setCategoria] = useState(""); 
+  const [categoria, setCategoria] = useState("");
   const [fechaOperacion, setFechaOperacion] = useState(new Date().toISOString().split('T')[0]);
-  
+
   // Recurrencia
   const [isRecurrente, setIsRecurrente] = useState(false);
   const [frecuencia, setFrecuencia] = useState("Mensual");
   const [diaEjecucion, setDiaEjecucion] = useState("1");
   const [fechaFin, setFechaFin] = useState("");
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Buscador en memoria
   const [searchTerm, setSearchTerm] = useState("");
 
   // ── Toasts ────────────────────────────────────────────────────────────────
-  const [toasts, setToasts] = useState<{id:number; msg:string; type:'ok'|'err'}[]>([]);
+  const [toasts, setToasts] = useState<{ id: number; msg: string; type: 'ok' | 'err' }[]>([]);
   let _tid = 0;
-  function toast(msg: string, type: 'ok'|'err' = 'ok') {
+  function toast(msg: string, type: 'ok' | 'err' = 'ok') {
     const id = ++_tid;
     setToasts(prev => [...prev, { id, msg, type }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
@@ -190,7 +190,7 @@ export default function MovimientosPage() {
 
     if (movData && !movError) setMovimientos(movData);
     if (catData && !catError) setCategoriasLista(catData);
-    
+
     setLoading(false);
   };
 
@@ -220,9 +220,9 @@ export default function MovimientosPage() {
       } else {
         const { data: newCat, error: catError } = await supabase
           .from('categorias')
-          .insert([{ 
-            id_usuario: session.user.id, 
-            nombre_categoria: nombreCat 
+          .insert([{
+            id_usuario: session.user.id,
+            nombre_categoria: nombreCat
           }])
           .select('id_categoria')
           .single();
@@ -244,7 +244,7 @@ export default function MovimientosPage() {
         metodo_pago: metodoPago,
         descripcion_detalle: descripcion,
         fecha_operacion: fechaOperacion,
-        es_automatico: isRecurrente 
+        es_automatico: isRecurrente
       }
     ]);
 
@@ -282,13 +282,13 @@ export default function MovimientosPage() {
     setFrecuencia("Mensual");
     setDiaEjecucion("1");
     setFechaFin("");
-    fetchData(); 
+    fetchData();
     setIsSubmitting(false);
   };
 
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-in fade-in duration-500 relative">
-      
+
       {/* Header de Interfaz */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
         <div>
@@ -301,7 +301,7 @@ export default function MovimientosPage() {
           </p>
         </div>
 
-        <button 
+        <button
           onClick={() => setIsModalOpen(true)}
           className="flex items-center gap-2 bg-[#39FF14] text-black font-black uppercase tracking-widest text-[11px] px-6 py-3.5 rounded-xl hover:bg-[#a3e635] hover:shadow-[0_0_20px_rgba(57,255,20,0.3)] transition-all active:scale-95"
         >
@@ -337,22 +337,22 @@ export default function MovimientosPage() {
           <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest whitespace-nowrap shrink-0">
             {searchTerm
               ? `${movimientos.filter((mov) => {
-                  const q = searchTerm.toLowerCase().trim();
-                  const categoria = mov.categorias?.nombre_categoria ?? "";
-                  const descripcion = mov.descripcion_detalle ?? "";
-                  const metodo = mov.metodo_pago ?? "";
-                  const monto = String(mov.monto_transaccion ?? "");
-                  const fecha = mov.fecha_operacion ?? "";
-                  const tipo = mov.id_tipo === 1 ? "ingreso" : "egreso";
-                  return (
-                    categoria.toLowerCase().includes(q) ||
-                    descripcion.toLowerCase().includes(q) ||
-                    metodo.toLowerCase().includes(q) ||
-                    monto.includes(q) ||
-                    fecha.includes(q) ||
-                    tipo.includes(q)
-                  );
-                }).length} resultado(s)`
+                const q = searchTerm.toLowerCase().trim();
+                const categoria = mov.categorias?.nombre_categoria ?? "";
+                const descripcion = mov.descripcion_detalle ?? "";
+                const metodo = mov.metodo_pago ?? "";
+                const monto = String(mov.monto_transaccion ?? "");
+                const fecha = mov.fecha_operacion ?? "";
+                const tipo = mov.id_tipo === 1 ? "ingreso" : "egreso";
+                return (
+                  categoria.toLowerCase().includes(q) ||
+                  descripcion.toLowerCase().includes(q) ||
+                  metodo.toLowerCase().includes(q) ||
+                  monto.includes(q) ||
+                  fecha.includes(q) ||
+                  tipo.includes(q)
+                );
+              }).length} resultado(s)`
               : `${movimientos.length} registro(s)`}
           </span>
         </div>
@@ -361,7 +361,7 @@ export default function MovimientosPage() {
       {/* Tabla de Base de Datos */}
       <div className="bg-[#09090b] border border-zinc-800/50 rounded-2xl overflow-hidden shadow-2xl relative min-h-[300px] flex flex-col">
         <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#39FF14]/30 to-transparent"></div>
-        
+
         {loading ? (
           <div className="flex-1 flex flex-col items-center justify-center p-20 gap-4 text-[#39FF14]">
             <div className="relative">
@@ -380,21 +380,21 @@ export default function MovimientosPage() {
           const q = searchTerm.toLowerCase().trim();
           const filteredMovimientos = q
             ? movimientos.filter((mov) => {
-                const categoria  = mov.categorias?.nombre_categoria ?? "";
-                const descripcion = mov.descripcion_detalle ?? "";
-                const metodo     = mov.metodo_pago ?? "";
-                const monto      = String(mov.monto_transaccion ?? "");
-                const fecha      = mov.fecha_operacion ?? "";
-                const tipo       = mov.id_tipo === 1 ? "ingreso" : "egreso";
-                return (
-                  categoria.toLowerCase().includes(q) ||
-                  descripcion.toLowerCase().includes(q) ||
-                  metodo.toLowerCase().includes(q) ||
-                  monto.includes(q) ||
-                  fecha.includes(q) ||
-                  tipo.includes(q)
-                );
-              })
+              const categoria = mov.categorias?.nombre_categoria ?? "";
+              const descripcion = mov.descripcion_detalle ?? "";
+              const metodo = mov.metodo_pago ?? "";
+              const monto = String(mov.monto_transaccion ?? "");
+              const fecha = mov.fecha_operacion ?? "";
+              const tipo = mov.id_tipo === 1 ? "ingreso" : "egreso";
+              return (
+                categoria.toLowerCase().includes(q) ||
+                descripcion.toLowerCase().includes(q) ||
+                metodo.toLowerCase().includes(q) ||
+                monto.includes(q) ||
+                fecha.includes(q) ||
+                tipo.includes(q)
+              );
+            })
             : movimientos;
 
           if (filteredMovimientos.length === 0) {
@@ -414,76 +414,76 @@ export default function MovimientosPage() {
           }
 
           return (
-          <div className="w-full overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-zinc-800 text-zinc-500 text-[10px] uppercase font-bold tracking-widest bg-zinc-900/30">
-                  <th className="p-4 pl-6 w-32">Fecha</th>
-                  <th className="p-4 min-w-[200px]">Detalle / Categoría</th>
-                  <th className="p-4 w-40">Método / Ref</th>
-                  <th className="p-4 text-right w-40">Monto</th>
-                  <th className="p-4 text-center w-28">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMovimientos.map((mov) => {
-                  const [year, month, day] = mov.fecha_operacion.split('T')[0].split('-');
-                  const fechaOp = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-                  const fecha = fechaOp.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
-                  const isIngreso = mov.id_tipo === 1;
-                  const catNombre = mov.categorias?.nombre_categoria || "Sin categoría";
+            <div className="w-full overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-zinc-800 text-zinc-500 text-[10px] uppercase font-bold tracking-widest bg-zinc-900/30">
+                    <th className="p-4 pl-6 w-32">Fecha</th>
+                    <th className="p-4 min-w-[200px]">Detalle / Categoría</th>
+                    <th className="p-4 w-40">Método / Ref</th>
+                    <th className="p-4 text-right w-40">Monto</th>
+                    <th className="p-4 text-center w-28">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMovimientos.map((mov) => {
+                    const [year, month, day] = mov.fecha_operacion.split('T')[0].split('-');
+                    const fechaOp = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                    const fecha = fechaOp.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+                    const isIngreso = mov.id_tipo === 1;
+                    const catNombre = mov.categorias?.nombre_categoria || "Sin categoría";
 
-                  return (
-                    <tr key={mov.id_movimiento} className="border-b border-zinc-800/50 hover:bg-zinc-900/50 transition-colors group">
-                      <td className="p-4 pl-6 font-mono text-xs text-zinc-500 uppercase">{fecha}</td>
-                      <td className="p-4 text-sm text-zinc-300 font-medium">
-                        <div className="flex items-center gap-3">
-                          {isIngreso ? <TrendingUp size={16} className="text-[#39FF14] shrink-0" /> : <TrendingDown size={16} className="text-[#ff3939] shrink-0" />}
-                          <div className="flex flex-col">
-                            <span className="flex items-center gap-2">
-                              {mov.descripcion_detalle || 'Operación'}
-                              {/* ⚡ Rayo si el registro nació de la máquina automática */}
-                              {mov.es_automatico && (
-                                <span title="Generado por el sistema de forma automática" className="flex items-center">
-                                  <Zap size={12} className="text-[#39FF14] fill-[#39FF14]" />
-                                </span>
-                              )}
-                            </span>
-                            <span className="text-[9px] text-zinc-500 font-mono tracking-widest">{catNombre}</span>
+                    return (
+                      <tr key={mov.id_movimiento} className="border-b border-zinc-800/50 hover:bg-zinc-900/50 transition-colors group">
+                        <td className="p-4 pl-6 font-mono text-xs text-zinc-500 uppercase">{fecha}</td>
+                        <td className="p-4 text-sm text-zinc-300 font-medium">
+                          <div className="flex items-center gap-3">
+                            {isIngreso ? <TrendingUp size={16} className="text-[#39FF14] shrink-0" /> : <TrendingDown size={16} className="text-[#ff3939] shrink-0" />}
+                            <div className="flex flex-col">
+                              <span className="flex items-center gap-2">
+                                {mov.descripcion_detalle || 'Operación'}
+                                {/* ⚡ Rayo si el registro nació de la máquina automática */}
+                                {mov.es_automatico && (
+                                  <span title="Generado por el sistema de forma automática" className="flex items-center">
+                                    <Zap size={12} className="text-[#39FF14] fill-[#39FF14]" />
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-[9px] text-zinc-500 font-mono tracking-widest">{catNombre}</span>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="p-4 font-mono text-[10px] text-zinc-400">
-                        {mov.metodo_pago || 'Desconocido'}
-                      </td>
-                      <td className={`p-4 text-right font-mono font-bold tracking-tight text-lg ${isIngreso ? 'text-[#39FF14]' : 'text-white'}`}>
-                        {isIngreso ? '+' : '-'}${mov.monto_transaccion.toLocaleString()}
-                      </td>
-                      {/* Columna Acciones */}
-                      <td className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                          <button
-                            onClick={() => abrirEditar(mov)}
-                            title="Editar movimiento"
-                            className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-all"
-                          >
-                            <Pencil size={13} />
-                          </button>
-                          <button
-                            onClick={() => handleEliminar(mov)}
-                            title="Eliminar movimiento"
-                            className="p-1.5 rounded-lg bg-[#ff3939]/10 hover:bg-[#ff3939]/20 text-[#ff3939] border border-[#ff3939]/20 hover:border-[#ff3939]/40 transition-all"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td className="p-4 font-mono text-[10px] text-zinc-400">
+                          {mov.metodo_pago || 'Desconocido'}
+                        </td>
+                        <td className={`p-4 text-right font-mono font-bold tracking-tight text-lg ${isIngreso ? 'text-[#39FF14]' : 'text-white'}`}>
+                          {isIngreso ? '+' : '-'}${mov.monto_transaccion.toLocaleString()}
+                        </td>
+                        {/* Columna Acciones */}
+                        <td className="p-4 text-center">
+                          <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <button
+                              onClick={() => abrirEditar(mov)}
+                              title="Editar movimiento"
+                              className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-all"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleEliminar(mov)}
+                              title="Eliminar movimiento"
+                              className="p-1.5 rounded-lg bg-[#ff3939]/10 hover:bg-[#ff3939]/20 text-[#ff3939] border border-[#ff3939]/20 hover:border-[#ff3939]/40 transition-all"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           );
         })()}
       </div>
@@ -492,32 +492,32 @@ export default function MovimientosPage() {
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-[#09090b] border border-zinc-800 rounded-3xl p-6 w-full max-w-sm shadow-[0_0_50px_rgba(57,255,20,0.1)] relative max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <button 
+            <button
               onClick={() => setIsModalOpen(false)}
               className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors"
             >
               <X size={20} />
             </button>
-            
+
             <h2 className="text-lg font-black text-white uppercase tracking-widest mb-6 border-b border-zinc-800 pb-4">
               NUEVA OPERACIÓN
             </h2>
 
             <form onSubmit={handleGuardar} className="flex flex-col gap-4">
-              
+
               {/* Selector de Tipo */}
               <div className="flex bg-zinc-900 rounded-xl p-1 border border-zinc-800 gap-1">
-                <button type="button" onClick={() => setTipoMovimiento("1")} 
+                <button type="button" onClick={() => setTipoMovimiento("1")}
                   className={`flex-1 py-2.5 text-[10px] font-black tracking-widest uppercase rounded-lg transition-all ${tipoMovimiento === "1" ? "bg-[#39FF14] text-black shadow-[0_0_15px_rgba(57,255,20,0.2)]" : "text-zinc-500 hover:text-zinc-300"}`}>
                   Ingreso (+)
                 </button>
-                <button type="button" onClick={() => setTipoMovimiento("2")} 
+                <button type="button" onClick={() => setTipoMovimiento("2")}
                   className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${tipoMovimiento === "2" ? "bg-[#ff3939] text-white shadow-[0_0_15px_rgba(255,57,57,0.2)]" : "text-zinc-500 hover:text-zinc-300"}`}>
                   Egreso (-)
                 </button>
               </div>
 
-               {/* Monto */}
+              {/* Monto */}
               <div>
                 <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Monto Transado</label>
                 <div className="relative">
@@ -528,7 +528,7 @@ export default function MovimientosPage() {
                 </div>
               </div>
 
-               {/* Método de Pago y Categoría */}
+              {/* Método de Pago y Categoría */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1 flex items-center gap-1">
@@ -591,7 +591,7 @@ export default function MovimientosPage() {
 
                 {isRecurrente && (
                   <div className="mt-4 pt-4 border-t border-zinc-800/50 animate-in fade-in slide-in-from-top-2 flex flex-col gap-3">
-                    
+
                     <div>
                       <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Frecuencia de Repetición</label>
                       <select value={frecuencia} onChange={(e) => setFrecuencia(e.target.value)}
@@ -606,7 +606,7 @@ export default function MovimientosPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-1">
-                          <Calendar size={12}/> Día del mes
+                          <Calendar size={12} /> Día del mes
                         </label>
                         <input type="number" min="1" max="31" required value={diaEjecucion} onChange={(e) => setDiaEjecucion(e.target.value)}
                           className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white outline-none text-xs"
@@ -637,11 +637,10 @@ export default function MovimientosPage() {
       {/* ── Toasts ── */}
       <div className="fixed top-6 right-6 z-[200] flex flex-col gap-2 pointer-events-none">
         {toasts.map(t => (
-          <div key={t.id} className={`px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest shadow-2xl border pointer-events-auto animate-in fade-in slide-in-from-right-4 duration-300 ${
-            t.type === 'ok'
+          <div key={t.id} className={`px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest shadow-2xl border pointer-events-auto animate-in fade-in slide-in-from-right-4 duration-300 ${t.type === 'ok'
               ? 'bg-[#09090b] border-[#39FF14]/40 text-[#39FF14]'
               : 'bg-[#09090b] border-[#ff3939]/40 text-[#ff3939]'
-          }`}>{t.msg}</div>
+            }`}>{t.msg}</div>
         ))}
       </div>
 
@@ -674,15 +673,13 @@ export default function MovimientosPage() {
               {/* Tipo */}
               <div className="flex bg-zinc-900 rounded-xl p-1 border border-zinc-800 gap-1">
                 <button type="button" onClick={() => setEditTipo("1")}
-                  className={`flex-1 py-2.5 text-[10px] font-black tracking-widest uppercase rounded-lg transition-all ${
-                    editTipo === "1" ? "bg-[#39FF14] text-black shadow-[0_0_15px_rgba(57,255,20,0.2)]" : "text-zinc-500 hover:text-zinc-300"
-                  }`}>
+                  className={`flex-1 py-2.5 text-[10px] font-black tracking-widest uppercase rounded-lg transition-all ${editTipo === "1" ? "bg-[#39FF14] text-black shadow-[0_0_15px_rgba(57,255,20,0.2)]" : "text-zinc-500 hover:text-zinc-300"
+                    }`}>
                   Ingreso (+)
                 </button>
                 <button type="button" onClick={() => setEditTipo("2")}
-                  className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
-                    editTipo === "2" ? "bg-[#ff3939] text-white shadow-[0_0_15px_rgba(255,57,57,0.2)]" : "text-zinc-500 hover:text-zinc-300"
-                  }`}>
+                  className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${editTipo === "2" ? "bg-[#ff3939] text-white shadow-[0_0_15px_rgba(255,57,57,0.2)]" : "text-zinc-500 hover:text-zinc-300"
+                    }`}>
                   Egreso (-)
                 </button>
               </div>
@@ -701,7 +698,7 @@ export default function MovimientosPage() {
               {/* Método y Categoría */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1 flex items-center gap-1"><CreditCard size={12}/> Método</label>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1 flex items-center gap-1"><CreditCard size={12} /> Método</label>
                   <select value={editMetodo} onChange={e => setEditMetodo(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all text-xs">
                     <option value="Efectivo">Efectivo 💵</option>
@@ -709,7 +706,7 @@ export default function MovimientosPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1 flex items-center gap-1"><Layers size={12}/> Categoría</label>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1 flex items-center gap-1"><Layers size={12} /> Categoría</label>
                   <input type="text" value={editCategoria} onChange={e => setEditCategoria(e.target.value)}
                     list="edit-categorias-list" placeholder="Ej: Mesada"
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all text-xs" />
