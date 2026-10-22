@@ -32,5 +32,27 @@ from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oi
 where not t.tgisinternal and ((n.nspname='auth' and c.relname='users') or (n.nspname='public'
 and c.relname in ('usuarios','tipos_movimiento','categorias','movimientos','config_recurrencias','presupuestos_mensuales','metas_ahorro')));
 
+-- Column grants can differ from table grants (for example, profile currency).
+select grantee,table_name,column_name,privilege_type
+from information_schema.column_privileges
+where table_schema='public' and table_name in ('usuarios','tipos_movimiento','categorias','movimientos','config_recurrencias','presupuestos_mensuales','metas_ahorro')
+order by table_name,column_name,grantee,privilege_type;
+
+-- Inventory only: do not execute exposed functions or query view contents.
+select p.oid::regprocedure::text signature,pg_get_userbyid(p.proowner) owner,
+  p.prosecdef security_definer,p.proconfig settings,
+  has_function_privilege('anon',p.oid,'EXECUTE') anon_execute,
+  has_function_privilege('authenticated',p.oid,'EXECUTE') authenticated_execute
+from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+where n.nspname='public' and p.prokind='f'
+order by signature;
+
+select c.relname view_name,c.relkind kind,pg_get_userbyid(c.relowner) owner,c.reloptions settings,
+  has_table_privilege('anon',c.oid,'SELECT') anon_select,
+  has_table_privilege('authenticated',c.oid,'SELECT') authenticated_select
+from pg_class c join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='public' and c.relkind in ('v','m')
+order by c.relname;
+
 select id_tipo,nombre_tipo,signo_contable from public.tipos_movimiento order by id_tipo;
 commit;

@@ -39,6 +39,16 @@ before(async () => {
 });
 after(async () => { await db?.close(); });
 
+test('inspección de solo lectura enumera permisos, funciones y vistas sin consultar datos personales', async () => {
+  const inspection = await readFile(new URL('../supabase/inspect.sql', import.meta.url), 'utf8');
+  const results = await db.exec(inspection);
+  const rows = results.flatMap(result => result.rows);
+  assert.ok(rows.some(row => row.signature === 'check_finance_category_owner()' && row.anon_execute === false && row.authenticated_execute === false));
+  assert.ok(rows.some(row => row.table_name === 'usuarios' && row.column_name === 'nombre_completo' && row.privilege_type === 'UPDATE'));
+  assert.ok(!rows.some(row => 'id_usuario' in row || 'monto_transaccion' in row || 'username' in row));
+  assert.equal((await db.query('select count(*)::int n from public.usuarios')).rows[0].n, 2);
+});
+
 function asUser(user, action, role = 'authenticated') {
   return db.transaction(async tx => {
     await tx.exec('set local role ' + role);
