@@ -10,19 +10,11 @@ import {
 import ConfirmModal from "@/components/ConfirmModal";
 import { createFinanceReader } from '@/lib/finance-data';
 import { addCents, amountToCents, centsToDecimal, formatAmount, isCivilDate, readAllPages } from '@/lib/finance';
+import type { Row } from '@/lib/database.types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface Meta {
-  id_meta: string;
-  id_usuario: string;
-  nombre_meta: string;
-  monto_objetivo: number;
-  monto_actual: number;
-  fecha_proyectada: string | null;
-  prioridad_nivel: string | null;
-  estado_meta: string;
-}
+type Meta = Omit<Row<'metas_ahorro'>, 'monto_actual'> & { monto_actual: number };
 
 type Prioridad = "Bajo" | "Medio" | "Alto";
 
@@ -100,17 +92,19 @@ export default function MetasPage() {
         createFinanceReader(supabase).profile(uid),
         readAllPages(async (from, to) => {
           const { data, error } = await supabase.from('metas_ahorro').select('*').eq('id_usuario', uid)
-            .order('id_meta', { ascending: true }).range(from, to).returns<Meta[]>();
+            .order('id_meta', { ascending: true }).range(from, to);
           if (error || !data) throw new Error('No se pudieron cargar todas las metas.');
           return data;
         }),
       ]);
-      for (const meta of data) {
+      const validated = data.map((meta): Meta => {
+        if (meta.monto_actual === null) throw new Error('Hay una meta sin importe ahorrado. Revisa sus datos.');
         amountToCents(meta.monto_objetivo);
         amountToCents(meta.monto_actual, true);
-      }
+        return { ...meta, monto_actual: meta.monto_actual };
+      });
       setCurrency(profile.codigo_moneda);
-      setMetas(data);
+      setMetas(validated);
       setLoadError('');
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar las metas.');

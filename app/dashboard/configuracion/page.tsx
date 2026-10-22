@@ -85,9 +85,15 @@ export default function ConfiguracionPage() {
       if (pErr || !perfil) {
         toast("No se pudo cargar el perfil.", "err");
       } else {
+        const profileCurrency = MONEDAS.find(value => value === perfil.codigo_moneda);
+        if (!profileCurrency) {
+          toast('Tu perfil no tiene una moneda válida. Revisa su configuración en Supabase.', 'err');
+          setLoading(false);
+          return;
+        }
         setNombre(perfil.nombre_completo ?? "");
         setUsername(perfil.username ?? "");
-        setMoneda((perfil.codigo_moneda as Moneda) ?? "USD");
+        setMoneda(profileCurrency);
         setAvatar(perfil.url_avatar ?? AVATARS[0]);
         setFechaRegistro(perfil.fecha_registro ?? null);
       }

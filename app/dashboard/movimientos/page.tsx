@@ -59,7 +59,7 @@ export default function MovimientosPage() {
       readAllPages(async (from, to) => {
         const { data, error } = await supabase.from('categorias').select('id_categoria, nombre_categoria')
           .or('id_usuario.eq.' + session.user.id + ',id_usuario.is.null')
-          .order('id_categoria', { ascending: true }).range(from, to).returns<Category[]>();
+          .order('id_categoria', { ascending: true }).range(from, to);
         if (error || !data) throw new Error('No se pudieron cargar las categorías.');
         return data;
       }),

@@ -1,4 +1,5 @@
-import type { SupabaseClient, User } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
+import type { AppSupabaseClient } from './supabase.ts';
 
 export interface ProfileInput {
   nombre_completo: string;
@@ -30,7 +31,7 @@ export function authRedirect(origin: string, next: '/dashboard' | '/actualizar-c
   return url.href;
 }
 
-export async function verifiedUser(client: SupabaseClient): Promise<User | null> {
+export async function verifiedUser(client: AppSupabaseClient): Promise<User | null> {
   const { data, error } = await client.auth.getUser();
   if (error) {
     if (error.name === 'AuthSessionMissingError' || error.status === 401 || error.status === 403) return null;
@@ -39,13 +40,13 @@ export async function verifiedUser(client: SupabaseClient): Promise<User | null>
   return data.user;
 }
 
-export async function hasProfile(client: SupabaseClient, userId: string): Promise<boolean> {
+export async function hasProfile(client: AppSupabaseClient, userId: string): Promise<boolean> {
   const { data, error } = await client.from('usuarios').select('id_usuario').eq('id_usuario', userId).maybeSingle();
   if (error) throw new Error('No se pudo consultar tu perfil. Revisa la conexión y los permisos de Supabase.');
   return Boolean(data);
 }
 
-export async function createOwnProfile(client: SupabaseClient, input: ProfileInput): Promise<void> {
+export async function createOwnProfile(client: AppSupabaseClient, input: ProfileInput): Promise<void> {
   const profile = validateProfile(input);
   const user = await verifiedUser(client);
   if (!user) throw new Error('Inicia sesión antes de completar tu perfil.');
@@ -61,13 +62,13 @@ export async function createOwnProfile(client: SupabaseClient, input: ProfileInp
   }
 }
 
-export async function accountDestination(client: SupabaseClient): Promise<'/dashboard' | '/completar-perfil' | '/login'> {
+export async function accountDestination(client: AppSupabaseClient): Promise<'/dashboard' | '/completar-perfil' | '/login'> {
   const user = await verifiedUser(client);
   if (!user) return '/login';
   return await hasProfile(client, user.id) ? '/dashboard' : '/completar-perfil';
 }
 
-export async function initializeMetadataProfile(client: SupabaseClient): Promise<string> {
+export async function initializeMetadataProfile(client: AppSupabaseClient): Promise<string> {
   const user = await verifiedUser(client);
   if (!user) return '/login';
   if (await hasProfile(client, user.id)) return '/dashboard';
@@ -83,7 +84,7 @@ export async function initializeMetadataProfile(client: SupabaseClient): Promise
   catch { return '/completar-perfil'; }
 }
 
-export async function registerAccount(client: SupabaseClient, email: string, password: string, input: ProfileInput, origin: string) {
+export async function registerAccount(client: AppSupabaseClient, email: string, password: string, input: ProfileInput, origin: string) {
   const profile = validateProfile(input);
   validatePassword(password);
   const { data, error } = await client.auth.signUp({
@@ -96,7 +97,7 @@ export async function registerAccount(client: SupabaseClient, email: string, pas
   return { confirmationRequired: false, destination: await initializeMetadataProfile(client) };
 }
 
-export async function resendSignupConfirmation(client: SupabaseClient, email: string, origin: string): Promise<void> {
+export async function resendSignupConfirmation(client: AppSupabaseClient, email: string, origin: string): Promise<void> {
   const { error } = await client.auth.resend({
     type: 'signup', email: email.trim(), options: { emailRedirectTo: authRedirect(origin) },
   });
@@ -108,7 +109,7 @@ export async function resendSignupConfirmation(client: SupabaseClient, email: st
   }
 }
 
-export async function requestPasswordRecovery(client: SupabaseClient, email: string, origin: string): Promise<void> {
+export async function requestPasswordRecovery(client: AppSupabaseClient, email: string, origin: string): Promise<void> {
   const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
     redirectTo: authRedirect(origin, '/actualizar-clave'),
   });
@@ -128,13 +129,13 @@ export async function requestPasswordRecovery(client: SupabaseClient, email: str
   throw new Error('La solicitud de recuperación fue rechazada. Revisa la configuración de autenticación del proyecto antes de volver a intentar.');
 }
 
-export async function confirmedSignupDestination(client: SupabaseClient, email: string): Promise<string | null> {
+export async function confirmedSignupDestination(client: AppSupabaseClient, email: string): Promise<string | null> {
   const user = await verifiedUser(client);
   if (!user?.email_confirmed_at || user.email?.trim().toLowerCase() !== email.trim().toLowerCase()) return null;
   return await hasProfile(client, user.id) ? '/dashboard' : '/completar-perfil';
 }
 
-export async function updateRecoveryPassword(client: SupabaseClient, password: string): Promise<void> {
+export async function updateRecoveryPassword(client: AppSupabaseClient, password: string): Promise<void> {
   validatePassword(password);
   const { error } = await client.auth.updateUser({ password });
   if (!error) return;
@@ -150,7 +151,7 @@ export async function updateRecoveryPassword(client: SupabaseClient, password: s
   throw new Error(`No se pudo guardar la contraseña. Comparte esta referencia para revisar la causa: ${reference}.`);
 }
 
-export async function completeAuthLink(client: SupabaseClient, href: string) {
+export async function completeAuthLink(client: AppSupabaseClient, href: string) {
   const url = new URL(href);
   const hash = new URLSearchParams(url.hash.slice(1));
   if (url.searchParams.has('error') || hash.has('error')) throw new Error('El enlace venció o no es válido. Solicita uno nuevo.');

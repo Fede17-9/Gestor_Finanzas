@@ -1,43 +1,27 @@
+import type { DecimalString, Row } from './database.types.ts';
+
 // Pure financial rules. Amounts are accumulated as integer cents; dates are civil days.
 export const FINANCE_TIME_ZONE = 'America/Bogota';
 export const MAX_AMOUNT_CENTS = 999_999_999_999_999; // numeric(15, 2)
 
-export interface Category {
-  id_categoria: string;
-  nombre_categoria: string;
-}
+export type Category = Pick<Row<'categorias'>, 'id_categoria' | 'nombre_categoria'>;
 
-export interface Movement {
-  id_movimiento: string;
-  id_categoria: string | null;
-  id_tipo: number;
+export interface Movement extends Omit<Row<'movimientos'>, 'id_usuario' | 'monto_transaccion' | 'fecha_operacion' | 'es_automatico'> {
   monto_transaccion: number | string;
   fecha_operacion: string;
-  descripcion_detalle: string | null;
-  metodo_pago: string | null;
   es_automatico: boolean;
   categorias: { nombre_categoria: string } | null;
 }
 
-export interface Recurrence {
-  id_recurrencia: string;
-  id_usuario: string;
-  id_categoria: string | null;
-  id_tipo: number;
+export interface Recurrence extends Omit<Row<'config_recurrencias'>, 'monto_recurrente' | 'frecuencia' | 'estado_activo'> {
   monto_recurrente: number | string;
   frecuencia: string;
-  dia_ejecucion: number | null;
-  fecha_inicio: string;
-  fecha_fin: string | null;
   estado_activo: boolean;
   categorias: { nombre_categoria: string } | null;
 }
 
-export interface Profile {
-  nombre_completo: string;
-  username: string;
+export interface Profile extends Pick<Row<'usuarios'>, 'nombre_completo' | 'username' | 'url_avatar'> {
   codigo_moneda: string;
-  url_avatar: string | null;
 }
 
 export function amountToCents(amount: string | number, allowZero = false): number {
@@ -59,10 +43,10 @@ export function addCents(left: number, right: number): number {
   return result;
 }
 
-export function centsToDecimal(cents: number): string {
+export function centsToDecimal(cents: number): DecimalString {
   if (!Number.isSafeInteger(cents)) throw new Error('Importe inválido.');
   const absolute = Math.abs(cents);
-  return (cents < 0 ? '-' : '') + Math.trunc(absolute / 100) + '.' + String(absolute % 100).padStart(2, '0');
+  return ((cents < 0 ? '-' : '') + Math.trunc(absolute / 100) + '.' + String(absolute % 100).padStart(2, '0')) as DecimalString;
 }
 
 export function formatAmount(amount: number | string, currency = 'COP'): string {

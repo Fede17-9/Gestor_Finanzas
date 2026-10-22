@@ -259,3 +259,37 @@ test('un perfil sin moneda reconocida no permite presentar importes bajo una mon
   });
   await assert.rejects(createFinanceReader(client).profile('owner'), /moneda válida/);
 });
+
+test('lector tipado rechaza fechas nulas y normaliza indicadores opcionales sin alterar importes', async () => {
+  let invalidDate = true;
+  const client = createClient('https://finance-tests.invalid', 'test-public-key', {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { fetch: async input => {
+      const url = new URL(String(input));
+      const firstPage = !Number(url.searchParams.get('offset'));
+      const rows = firstPage ? [movement({ fecha_operacion: invalidDate ? null : '2026-03-27', es_automatico: null })] : [];
+      return new Response(JSON.stringify(rows), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } },
+  });
+  await assert.rejects(createFinanceReader(client).movements('owner'), /fecha inválida/);
+  invalidDate = false;
+  const [row] = await createFinanceReader(client).movements('owner');
+  assert.equal(row.es_automatico, false);
+  assert.equal(row.monto_transaccion, movement().monto_transaccion);
+});
+
+test('lector tipado conserva reglas con día opcional y rechaza una frecuencia nula', async () => {
+  let invalidFrequency = false;
+  const client = createClient('https://finance-tests.invalid', 'test-public-key', {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { fetch: async input => {
+      const firstPage = !Number(new URL(String(input)).searchParams.get('offset'));
+      return new Response(JSON.stringify(firstPage ? [recurrence({ frecuencia: invalidFrequency ? null : 'Semanal', dia_ejecucion: null })] : []), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    } },
+  });
+  assert.equal((await createFinanceReader(client).recurrences('owner'))[0].dia_ejecucion, null);
+  invalidFrequency = true;
+  await assert.rejects(createFinanceReader(client).recurrences('owner'), /frecuencia inválida/);
+});

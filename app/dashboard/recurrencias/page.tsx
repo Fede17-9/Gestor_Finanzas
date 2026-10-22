@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
-import { createFinanceReader } from '@/lib/finance-data';
+import { createFinanceReader, normalizeRecurrence } from '@/lib/finance-data';
 import { amountToCents, centsToDecimal, formatAmount, isCivilDate, readAllPages } from '@/lib/finance';
+import type { DecimalString } from '@/lib/database.types';
+import type { Recurrence } from '@/lib/finance';
 import {
   Repeat, Search, X, Pencil, Trash2, Pause, Play,
   TrendingUp, TrendingDown, AlertTriangle,
@@ -14,19 +16,7 @@ import ConfirmModal from "@/components/ConfirmModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Recurrencia {
-  id_recurrencia: string;
-  id_usuario: string;
-  id_tipo: number;
-  id_categoria: string | null;
-  monto_recurrente: number | string;
-  frecuencia: string;
-  dia_ejecucion: number;
-  fecha_inicio: string;
-  fecha_fin: string | null;
-  estado_activo: boolean;
-  categorias?: { nombre_categoria: string } | null;
-}
+type Recurrencia = Recurrence;
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
@@ -80,9 +70,9 @@ export default function RecurrenciasPage() {
         readAllPages(async (from, to) => {
           const { data, error } = await supabase.from('config_recurrencias').select('*, categorias(nombre_categoria)')
             .eq('id_usuario', uid).order('fecha_inicio', { ascending: false })
-            .order('id_recurrencia', { ascending: true }).range(from, to).returns<Recurrencia[]>();
+            .order('id_recurrencia', { ascending: true }).range(from, to);
           if (error || !data) throw new Error('No se pudieron cargar las reglas.');
-          return data;
+          return data.map(normalizeRecurrence);
         }),
       ]);
       setCurrency(profile.codigo_moneda);
@@ -180,7 +170,7 @@ export default function RecurrenciasPage() {
   async function handleGuardar(e: React.FormEvent) {
     e.preventDefault();
     if (!editRec) return;
-    let monto: string;
+    let monto: DecimalString;
     try {
       monto = centsToDecimal(amountToCents(eMonto));
       if (!isCivilDate(eFechaInicio)) throw new Error('La fecha de inicio no es válida.');
