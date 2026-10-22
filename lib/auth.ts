@@ -96,6 +96,24 @@ export async function registerAccount(client: SupabaseClient, email: string, pas
   return { confirmationRequired: false, destination: await initializeMetadataProfile(client) };
 }
 
+export async function resendSignupConfirmation(client: SupabaseClient, email: string, origin: string): Promise<void> {
+  const { error } = await client.auth.resend({
+    type: 'signup', email: email.trim(), options: { emailRedirectTo: authRedirect(origin) },
+  });
+  if (error) {
+    if (error.status === 429 || error.code === 'over_email_send_rate_limit' || error.code === 'over_request_rate_limit') {
+      throw new Error('Se alcanzó el límite de solicitudes de correo. Espera un tiempo antes de volver a intentar.');
+    }
+    throw new Error('No se pudo solicitar el reenvío. Revisa la conexión e intenta de nuevo más tarde.');
+  }
+}
+
+export async function confirmedSignupDestination(client: SupabaseClient, email: string): Promise<string | null> {
+  const user = await verifiedUser(client);
+  if (!user?.email_confirmed_at || user.email?.trim().toLowerCase() !== email.trim().toLowerCase()) return null;
+  return await hasProfile(client, user.id) ? '/dashboard' : '/completar-perfil';
+}
+
 export async function completeAuthLink(client: SupabaseClient, href: string) {
   const url = new URL(href);
   const hash = new URLSearchParams(url.hash.slice(1));

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Infinity } from "lucide-react";
 import Image from 'next/image';
 import { registerAccount } from '@/lib/auth';
+import SignupConfirmation from '@/components/SignupConfirmation';
 
 // Lista de Avatares sencillos
 const AVATARS = [
@@ -27,20 +28,21 @@ export default function RegistroPage() {
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const [confirmationEmail, setConfirmationEmail] = useState('');
   const lock = useRef(false);
   const router = useRouter();
 
   const handleRegistro = async (e: React.FormEvent) => {
     e.preventDefault();
     if (lock.current) return;
-    lock.current = true; setLoading(true); setError(''); setMessage('');
+    lock.current = true; setLoading(true); setError('');
     try {
       const result = await registerAccount(supabase, email, password, {
         nombre_completo: nombre, username, codigo_moneda: moneda, url_avatar: avatar,
       }, window.location.origin);
       if (result.confirmationRequired) {
-        setMessage('Revisa tu correo para confirmar la cuenta. Abre el enlace en este mismo navegador.');
+        setConfirmationEmail(email.trim());
+        setPassword('');
       } else if (result.destination) router.replace(result.destination);
     } catch (error) { setError(error instanceof Error ? error.message : 'No se pudo crear la cuenta.'); }
     finally { lock.current = false; setLoading(false); }
@@ -48,6 +50,8 @@ export default function RegistroPage() {
 
   const inputStyles = "w-full border border-zinc-800 px-4 py-3 text-sm text-white bg-zinc-900 rounded-xl focus:outline-none focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] placeholder-zinc-600 transition-all";
   const labelStyles = "block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1";
+
+  if (confirmationEmail) return <SignupConfirmation email={confirmationEmail} onChangeEmail={() => setConfirmationEmail('')} />;
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#000000] p-4 relative overflow-hidden font-sans selection:bg-[#39FF14] selection:text-black py-10">
@@ -88,19 +92,19 @@ export default function RegistroPage() {
 
         <div>
           <label className={labelStyles}>Identidad Real (Nombre Completo)</label>
-          <input type="text" maxLength={120} placeholder="Ej: John Doe"
+          <input type="text" value={nombre} maxLength={120} placeholder="Ej: John Doe"
                  onChange={(e) => setNombre(e.target.value)} className={inputStyles} required />
         </div>
         
         <div>
           <label className={labelStyles}>Alias Operativo (Apodo)</label>
-          <input type="text" minLength={3} maxLength={32} placeholder="Ej: Neo"
+          <input type="text" value={username} minLength={3} maxLength={32} placeholder="Ej: Neo"
                  onChange={(e) => setUsername(e.target.value)} className={inputStyles} required />
         </div>
 
         <div>
           <label className={labelStyles}>Moneda Base</label>
-          <select onChange={(e) => setMoneda(e.target.value)} className={inputStyles}>
+          <select value={moneda} onChange={(e) => setMoneda(e.target.value)} className={inputStyles}>
             <option value="USD">USD - Dólar Estadounidense</option>
             <option value="COP">COP - Peso Colombiano</option>
             <option value="EUR">EUR - Euro</option>
@@ -109,13 +113,13 @@ export default function RegistroPage() {
 
         <div>
           <label className={labelStyles}>Correo Seguro</label>
-          <input type="email" placeholder="agente@mail.com" 
+          <input type="email" value={email} autoComplete="email" placeholder="agente@mail.com"
                  onChange={(e) => setEmail(e.target.value)} className={inputStyles} required />
         </div>
 
         <div>
           <label className={labelStyles}>Clave Encriptada</label>
-          <input type="password" autoComplete="new-password" minLength={8} maxLength={128} placeholder="••••••••"
+          <input type="password" value={password} autoComplete="new-password" minLength={8} maxLength={128} placeholder="••••••••"
                  onChange={(e) => setPassword(e.target.value)} className={inputStyles} required />
         </div>
 
@@ -124,7 +128,6 @@ export default function RegistroPage() {
         </button>
 
         {error && <p role="alert" className="text-red-300 text-sm">{error}</p>}
-        {message && <p role="status" className="text-emerald-300 text-sm">{message}</p>}
         <p className="text-center text-xs font-semibold text-zinc-500 uppercase tracking-widest mt-2">
           ¿YA TIENES ACCESO? <Link href="/login" className="text-[#39FF14] hover:text-white transition-colors">INICIAR SESIÓN</Link>
         </p>

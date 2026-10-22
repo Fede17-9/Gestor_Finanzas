@@ -1,17 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { accountDestination, authRedirect, completeAuthLink, createOwnProfile, initializeMetadataProfile, registerAccount, validatePassword, validateProfile, verifiedUser } from '../lib/auth.ts';
+import { accountDestination, authRedirect, completeAuthLink, confirmedSignupDestination, createOwnProfile, initializeMetadataProfile, registerAccount, resendSignupConfirmation, validatePassword, validateProfile, verifiedUser } from '../lib/auth.ts';
+import { createClient } from '@supabase/supabase-js';
 
 const profile = { nombre_completo: 'Persona ficticia', username: 'persona', codigo_moneda: 'COP', url_avatar: null };
 function clientFor(options = {}) {
   const calls = [];
   let existing = options.existing ?? false;
-  const user = { id: 'verified-user', user_metadata: options.metadata ?? profile };
+  const user = { id: 'verified-user', email: options.email ?? 'persona@example.test', email_confirmed_at: options.unconfirmed ? null : '2026-10-22T12:00:00Z', user_metadata: options.metadata ?? profile };
   return {
     calls,
     auth: {
       async getUser() { calls.push(['getUser']); return { data: { user: options.anonymous ? null : user }, error: options.authError ?? null }; },
       async signUp(input) { calls.push(['signUp', input]); return { data: { user, session: options.confirmed ? { user } : null }, error: null }; },
+      async resend(input) { calls.push(['resend', input]); return { data: {}, error: options.resendError ?? null }; },
       async exchangeCodeForSession(code) { calls.push(['exchange', code]); return { data: { redirectType: options.recovery ? 'PASSWORD_RECOVERY' : null }, error: options.linkError ?? null }; },
       async setSession(tokens) { calls.push(['setSession', tokens]); return { error: null }; },
     },
@@ -44,6 +46,52 @@ test('registro con confirmación de correo no inserta perfil sin una sesión', a
   assert.equal(request.email, 'persona@example.test');
   assert.deepEqual(request.options.data, profile);
   assert.equal(request.options.emailRedirectTo, 'http://localhost:3000/auth/callback?next=%2Fdashboard');
+});
+
+test('reenvío solicita confirmación existente sin repetir signUp ni insertar un perfil', async () => {
+  const client = clientFor({ anonymous: true });
+  await resendSignupConfirmation(client, ' persona@example.test ', 'http://localhost:3000');
+  assert.deepEqual(client.calls, [['resend', {
+    type: 'signup', email: 'persona@example.test',
+    options: { emailRedirectTo: 'http://localhost:3000/auth/callback?next=%2Fdashboard' },
+  }]]);
+});
+
+test('reenvío informa límites y rechazos sin anunciar un correo enviado', async () => {
+  for (const error of [{ status: 429 }, { code: 'over_email_send_rate_limit' }, { code: 'over_request_rate_limit' }]) {
+    await assert.rejects(resendSignupConfirmation(clientFor({ resendError: error }), 'persona@example.test', 'http://localhost:3000'), /límite/);
+  }
+  await assert.rejects(resendSignupConfirmation(clientFor({ resendError: { status: 500 } }), 'persona@example.test', 'http://localhost:3000'), /No se pudo solicitar/);
+});
+
+test('pestaña de registro solo continúa para la misma cuenta verificada, incluyendo perfil pendiente', async () => {
+  assert.equal(await confirmedSignupDestination(clientFor({ existing: true }), ' PERSONA@example.test '), '/dashboard');
+  assert.equal(await confirmedSignupDestination(clientFor(), 'persona@example.test'), '/completar-perfil');
+  for (const options of [{ anonymous: true }, { unconfirmed: true }, { email: 'otra@example.test' }]) {
+    const client = clientFor(options);
+    assert.equal(await confirmedSignupDestination(client, 'persona@example.test'), null);
+    assert.equal(client.calls.some(([operation]) => operation === 'owner'), false);
+  }
+});
+
+test('cliente Supabase real: reenvío emite POST resend con callback, sin tráfico externo', async () => {
+  const requests = [];
+  const client = createClient('https://finance.invalid', 'public-test-key', {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'pkce' },
+    global: { fetch: async (url, init) => {
+      requests.push({ url: String(url), method: init.method, body: JSON.parse(init.body) });
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } },
+  });
+  await resendSignupConfirmation(client, 'persona@example.test', 'http://localhost:3000');
+  assert.equal(requests.length, 1);
+  const request = requests[0];
+  assert.equal(request.method, 'POST');
+  assert.equal(new URL(request.url).pathname, '/auth/v1/resend');
+  assert.equal(new URL(request.url).searchParams.get('redirect_to'), 'http://localhost:3000/auth/callback?next=%2Fdashboard');
+  assert.equal(request.body.email, 'persona@example.test');
+  assert.equal(request.body.type, 'signup');
+  assert.equal('password' in request.body, false);
 });
 
 test('si el servicio entrega sesión válida, completa el perfil con la identidad verificada', async () => {
