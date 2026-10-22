@@ -108,6 +108,26 @@ export async function resendSignupConfirmation(client: SupabaseClient, email: st
   }
 }
 
+export async function requestPasswordRecovery(client: SupabaseClient, email: string, origin: string): Promise<void> {
+  const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: authRedirect(origin, '/actualizar-clave'),
+  });
+  if (!error) return; // Acceptance does not prove account existence or inbox delivery.
+  if (error.status === 429 || error.code === 'over_email_send_rate_limit' || error.code === 'over_request_rate_limit') {
+    throw new Error('El servicio alcanzó su límite de envío de correos. Espera antes de volver a intentar. Los correos de registro y recuperación comparten ese límite.');
+  }
+  if (error.code === 'email_address_not_authorized') {
+    throw new Error('El servicio de correo del proyecto no permite enviar a esta dirección. Es necesario configurar el envío de correos en Supabase.');
+  }
+  if (error.name === 'AuthRetryableFetchError' || error.status === 0) {
+    throw new Error('No se pudo conectar con el servicio de recuperación. Revisa tu conexión antes de volver a intentar.');
+  }
+  if ((error.status ?? 0) >= 500) {
+    throw new Error('El servidor no pudo procesar el envío. Hay que revisar los registros de autenticación y la configuración del servicio de correo.');
+  }
+  throw new Error('La solicitud de recuperación fue rechazada. Revisa la configuración de autenticación del proyecto antes de volver a intentar.');
+}
+
 export async function confirmedSignupDestination(client: SupabaseClient, email: string): Promise<string | null> {
   const user = await verifiedUser(client);
   if (!user?.email_confirmed_at || user.email?.trim().toLowerCase() !== email.trim().toLowerCase()) return null;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { accountDestination, authRedirect, completeAuthLink, confirmedSignupDestination, createOwnProfile, initializeMetadataProfile, registerAccount, resendSignupConfirmation, validatePassword, validateProfile, verifiedUser } from '../lib/auth.ts';
+import { accountDestination, authRedirect, completeAuthLink, confirmedSignupDestination, createOwnProfile, initializeMetadataProfile, registerAccount, requestPasswordRecovery, resendSignupConfirmation, validatePassword, validateProfile, verifiedUser } from '../lib/auth.ts';
 import { createClient } from '@supabase/supabase-js';
 
 const profile = { nombre_completo: 'Persona ficticia', username: 'persona', codigo_moneda: 'COP', url_avatar: null };
@@ -14,6 +14,7 @@ function clientFor(options = {}) {
       async getUser() { calls.push(['getUser']); return { data: { user: options.anonymous ? null : user }, error: options.authError ?? null }; },
       async signUp(input) { calls.push(['signUp', input]); return { data: { user, session: options.confirmed ? { user } : null }, error: null }; },
       async resend(input) { calls.push(['resend', input]); return { data: {}, error: options.resendError ?? null }; },
+      async resetPasswordForEmail(email, input) { calls.push(['recover', email, input]); return { data: {}, error: options.recoveryError ?? null }; },
       async exchangeCodeForSession(code) { calls.push(['exchange', code]); return { data: { redirectType: options.recovery ? 'PASSWORD_RECOVERY' : null }, error: options.linkError ?? null }; },
       async setSession(tokens) { calls.push(['setSession', tokens]); return { error: null }; },
     },
@@ -55,6 +56,49 @@ test('reenvío solicita confirmación existente sin repetir signUp ni insertar u
     type: 'signup', email: 'persona@example.test',
     options: { emailRedirectTo: 'http://localhost:3000/auth/callback?next=%2Fdashboard' },
   }]]);
+});
+
+test('recuperación solicita correo con callback propio sin consultar perfiles ni crear cuentas', async () => {
+  const client = clientFor({ anonymous: true });
+  await requestPasswordRecovery(client, ' persona@example.test ', 'http://localhost:3000');
+  assert.deepEqual(client.calls, [['recover', 'persona@example.test', {
+    redirectTo: 'http://localhost:3000/auth/callback?next=%2Factualizar-clave',
+  }]]);
+});
+
+test('recuperación distingue límite de envío, dirección no autorizada y fallo del servidor', async () => {
+  for (const error of [{ status: 429 }, { code: 'over_email_send_rate_limit' }, { code: 'over_request_rate_limit' }]) {
+    await assert.rejects(requestPasswordRecovery(clientFor({ recoveryError: error }), 'persona@example.test', 'http://localhost:3000'), /límite/);
+  }
+  await assert.rejects(requestPasswordRecovery(clientFor({ recoveryError: { code: 'email_address_not_authorized' } }), 'persona@example.test', 'http://localhost:3000'), /no permite enviar/);
+  await assert.rejects(requestPasswordRecovery(clientFor({ recoveryError: { status: 500 } }), 'persona@example.test', 'http://localhost:3000'), /servidor no pudo/);
+  await assert.rejects(requestPasswordRecovery(clientFor({ recoveryError: { name: 'AuthRetryableFetchError', status: 0 } }), 'persona@example.test', 'http://localhost:3000'), /conexión/);
+  await assert.rejects(requestPasswordRecovery(clientFor({ recoveryError: { status: 400, message: 'Private data' } }), 'persona@example.test', 'http://localhost:3000'), /rechazada/);
+});
+
+test('cliente Supabase real: recuperación transmite PKCE y callback; rechazos 429 y 500 no se ocultan', async () => {
+  for (const status of [200, 429, 500]) {
+    const requests = [];
+    const client = createClient('https://finance.invalid', 'public-test-key', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'pkce' },
+      global: { fetch: async (url, init) => {
+        requests.push({ url: String(url), method: init.method, body: JSON.parse(init.body) });
+        return new Response(JSON.stringify(status === 200 ? {} : { code: status === 429 ? 'over_email_send_rate_limit' : 'unexpected_failure', msg: 'Test failure' }), {
+          status, headers: { 'Content-Type': 'application/json', 'X-Supabase-Api-Version': '2024-01-01' },
+        });
+      } },
+    });
+    const result = requestPasswordRecovery(client, 'persona@example.test', 'http://localhost:3000');
+    if (status === 200) await result;
+    else await assert.rejects(result, status === 429 ? /límite/ : /servidor no pudo/);
+    assert.equal(requests.length, 1);
+    assert.equal(new URL(requests[0].url).pathname, '/auth/v1/recover');
+    assert.equal(new URL(requests[0].url).searchParams.get('redirect_to'), 'http://localhost:3000/auth/callback?next=%2Factualizar-clave');
+    assert.equal(requests[0].method, 'POST');
+    assert.equal(requests[0].body.email, 'persona@example.test');
+    assert.equal(requests[0].body.code_challenge_method, 's256');
+    assert.ok(requests[0].body.code_challenge.length > 0);
+  }
 });
 
 test('reenvío informa límites y rechazos sin anunciar un correo enviado', async () => {
