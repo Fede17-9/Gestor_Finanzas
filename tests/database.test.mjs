@@ -39,6 +39,34 @@ before(async () => {
 });
 after(async () => { await db?.close(); });
 
+test('verificador A/B demuestra aislamiento, detecta una política abierta y revierte todos los cambios', async () => {
+  const verification = await readFile(new URL('../supabase/verify_isolation.sql', import.meta.url), 'utf8');
+  for (const permissive of [false, true]) {
+    const isolated = new PGlite();
+    try {
+      await isolated.exec(bootstrap);
+      await isolated.exec(baseline);
+      await isolated.exec(hardening);
+      await isolated.query('insert into auth.users(id) values ($1),($2)', [A,B]);
+      await isolated.query(`insert into public.usuarios(id_usuario,nombre_completo,username)
+        values ($1,'Persona A','persona_a'),($2,'Persona B','persona_b')`, [A,B]);
+      await isolated.query(`insert into public.movimientos(id_usuario,id_tipo,monto_transaccion,descripcion_detalle)
+        values ($1,2,1,'PRUEBA_PRIVACIDAD_A'),($2,2,1,'PRUEBA_PRIVACIDAD_B')`, [A,B]);
+      const before = (await isolated.query('select * from public.movimientos order by id_movimiento')).rows;
+      if (permissive) {
+        await isolated.exec('create policy insecure_test on public.movimientos for all to authenticated using(true) with check(true)');
+        await assert.rejects(isolated.exec(verification), /Fallo de aislamiento/);
+        await isolated.exec('rollback');
+      } else {
+        const results = (await isolated.exec(verification)).flatMap(result => result.rows).filter(row => 'cuenta' in row);
+        assert.equal(results.length, 2);
+        assert.ok(results.every(row => Object.entries(row).every(([key,value]) => key === 'cuenta' || value === true)));
+      }
+      assert.deepEqual((await isolated.query('select * from public.movimientos order by id_movimiento')).rows, before);
+    } finally { await isolated.close(); }
+  }
+});
+
 test('inspección de solo lectura enumera permisos, funciones y vistas sin consultar datos personales', async () => {
   const inspection = await readFile(new URL('../supabase/inspect.sql', import.meta.url), 'utf8');
   const results = await db.exec(inspection);
