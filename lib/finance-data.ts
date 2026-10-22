@@ -1,9 +1,9 @@
 import type { AppSupabaseClient } from './supabase.ts';
 import { amountToCents, movementDate, movementSign, readAllPages } from './finance.ts';
-import type { Movement, Profile, Recurrence } from './finance.ts';
+import type { Movement, Occurrence, Profile, Recurrence } from './finance.ts';
 import type { Row } from './database.types.ts';
 
-const MOVEMENT_FIELDS = 'id_movimiento, id_categoria, id_tipo, monto_transaccion, fecha_operacion, descripcion_detalle, metodo_pago, es_automatico, categorias(nombre_categoria)';
+const MOVEMENT_FIELDS = 'id_movimiento, id_categoria, id_tipo, monto_transaccion, fecha_operacion, descripcion_detalle, metodo_pago, es_automatico, id_ocurrencia, categorias(nombre_categoria)';
 
 export function normalizeRecurrence(row: Row<'config_recurrencias'> & { categorias: Recurrence['categorias'] }): Recurrence {
   const frequency = row.frecuencia;
@@ -48,11 +48,19 @@ export function createFinanceReader(client: AppSupabaseClient) {
       }
       return { ...data, codigo_moneda: currency };
     },
-    async recurrences(userId: string): Promise<Recurrence[]> {
+    async occurrences(userId: string): Promise<Occurrence[]> {
       return readAllPages(async (from, to) => {
-        const { data, error } = await client.from('config_recurrencias').select('*, categorias(nombre_categoria)')
-          .eq('id_usuario', userId).eq('estado_activo', true)
-          .order('id_recurrencia', { ascending: true }).range(from, to);
+        const { data, error } = await client.from('ocurrencias_recurrentes').select('*, categorias(nombre_categoria)')
+          .eq('id_usuario', userId).order('fecha_prevista').order('id_ocurrencia').range(from, to);
+        if (error || !data) throw new Error('No se pudieron cargar los vencimientos. Comprueba que aplicaste la migración de la fase 3.');
+        return data;
+      });
+    },
+    async recurrences(userId: string, activeOnly = true): Promise<Recurrence[]> {
+      return readAllPages(async (from, to) => {
+        let query = client.from('config_recurrencias').select('*, categorias(nombre_categoria)').eq('id_usuario', userId);
+        if (activeOnly) query = query.eq('estado_activo', true).eq('archivada', false);
+        const { data, error } = await query.order('id_recurrencia', { ascending: true }).range(from, to);
         if (error || !data) throw new Error('No se pudieron cargar las proyecciones.');
         return data.map(normalizeRecurrence);
       });

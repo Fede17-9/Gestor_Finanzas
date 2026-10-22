@@ -20,15 +20,14 @@ export async function generateDatabaseTypes() {
     const tables = (await db.query(`select c.oid,c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where n.nspname='public' and c.relkind='r' order by c.relname`)).rows;
     const unsupported = (await db.query(`select 'view' kind,c.relname name from pg_class c join pg_namespace n on n.oid=c.relnamespace
-      where n.nspname='public' and c.relkind in ('v','m')
-      union all select 'function',p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='public' and p.prokind='f' and p.prorettype <> 'trigger'::regtype`)).rows;
+      where n.nspname='public' and c.relkind in ('v','m')`)).rows;
     if (unsupported.length) throw new Error('Ampliar el generador para estas vistas/RPC antes de continuar: ' + JSON.stringify(unsupported));
 
     const lines = [
       '// Generated from supabase/migrations by npm run db:types. Do not edit manually.',
       '// This checks the versioned schema, not unversioned changes in Supabase Cloud.',
       'export type DecimalString = `${number}`;',
+      'export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];',
       'export type Database = {', '  public: {', '    Tables: {',
     ];
     for (const table of tables) {
@@ -70,7 +69,28 @@ export async function generateDatabaseTypes() {
       }
       lines.push('        ];', '      };');
     }
-    lines.push('    };', '    Views: { [_ in never]: never };', '    Functions: { [_ in never]: never };',
+    lines.push('    };', '    Views: { [_ in never]: never };', '    Functions: {');
+    const functions = (await db.query(`select p.oid,p.proname,p.proargnames,p.proargtypes::oid[] argtypes,p.pronargdefaults,
+      t.typname result,p.proretset from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_type t on t.oid=p.prorettype
+      where n.nspname='public' and p.prokind='f' and p.prorettype<>'trigger'::regtype order by p.proname`)).rows;
+    const names = new Set();
+    for (const fn of functions) {
+      if (names.has(fn.proname) || fn.proretset) throw new Error('RPC sobrecargada o SETOF no soportada: ' + fn.proname);
+      names.add(fn.proname);
+      lines.push(`      ${JSON.stringify(fn.proname)}: {`);
+      lines.push(fn.argtypes.length ? '        Args: {' : '        Args: Record<PropertyKey, never>;');
+      for (let index=0; index<fn.argtypes.length; index++) {
+        const type = (await db.query('select typname from pg_type where oid=$1',[fn.argtypes[index]])).rows[0].typname;
+        if (!fn.proargnames?.[index]) throw new Error('La RPC debe nombrar sus argumentos.');
+        const optional = index >= fn.argtypes.length-fn.pronargdefaults;
+        // PostgreSQL arguments accept NULL; business requirements are enforced in SQL.
+        const input = type === 'numeric' ? 'number | DecimalString' : columnType(type);
+        lines.push(`          ${JSON.stringify(fn.proargnames[index])}${optional ? '?' : ''}: ${input} | null;`);
+      }
+      if (fn.argtypes.length) lines.push('        };');
+      lines.push(`        Returns: ${columnType(fn.result)};`, '      };');
+    }
+    lines.push('    };',
       '    Enums: { [_ in never]: never };', '    CompositeTypes: { [_ in never]: never };', '  };', '};', '',
       'export type TableName = keyof Database["public"]["Tables"];',
       'export type Row<T extends TableName> = Database["public"]["Tables"][T]["Row"];',
@@ -84,6 +104,8 @@ function columnType(type) {
   if (['uuid','text','varchar','bpchar','date','timestamp','timestamptz','time','timetz'].includes(type)) return 'string';
   if (['int2','int4','int8','numeric','float4','float8'].includes(type)) return 'number';
   if (type === 'bool') return 'boolean';
+  if (['json','jsonb'].includes(type)) return 'Json';
+  if (type === 'void') return 'undefined';
   throw new Error('Tipo PostgreSQL no soportado: ' + type);
 }
 

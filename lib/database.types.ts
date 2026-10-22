@@ -1,6 +1,7 @@
 // Generated from supabase/migrations by npm run db:types. Do not edit manually.
 // This checks the versioned schema, not unversioned changes in Supabase Cloud.
 export type DecimalString = `${number}`;
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 export type Database = {
   public: {
     Tables: {
@@ -48,6 +49,10 @@ export type Database = {
           "fecha_inicio": string;
           "fecha_fin": string | null;
           "estado_activo": boolean | null;
+          "nombre": string;
+          "confirmacion_automatica": boolean;
+          "archivada": boolean;
+          "generar_desde": string;
         };
         Insert: {
           "id_recurrencia"?: string;
@@ -60,6 +65,10 @@ export type Database = {
           "fecha_inicio": string;
           "fecha_fin"?: string | null;
           "estado_activo"?: boolean | null;
+          "nombre"?: string;
+          "confirmacion_automatica"?: boolean;
+          "archivada"?: boolean;
+          "generar_desde"?: string;
         };
         Update: {
           "id_recurrencia"?: string;
@@ -72,6 +81,10 @@ export type Database = {
           "fecha_inicio"?: string;
           "fecha_fin"?: string | null;
           "estado_activo"?: boolean | null;
+          "nombre"?: string;
+          "confirmacion_automatica"?: boolean;
+          "archivada"?: boolean;
+          "generar_desde"?: string;
         };
         Relationships: [
           {
@@ -90,6 +103,58 @@ export type Database = {
           },
           {
             foreignKeyName: "config_recurrencias_id_usuario_fkey";
+            columns: ["id_usuario"];
+            isOneToOne: false;
+            referencedRelation: "usuarios";
+            referencedColumns: ["id_usuario"];
+          },
+        ];
+      };
+      "historial_recurrencias": {
+        Row: {
+          "id_evento": string;
+          "id_usuario": string;
+          "id_recurrencia": string;
+          "id_ocurrencia": string | null;
+          "accion": string;
+          "detalle": Json;
+          "creado_en": string;
+        };
+        Insert: {
+          "id_evento"?: string;
+          "id_usuario": string;
+          "id_recurrencia": string;
+          "id_ocurrencia"?: string | null;
+          "accion": string;
+          "detalle"?: Json;
+          "creado_en"?: string;
+        };
+        Update: {
+          "id_evento"?: string;
+          "id_usuario"?: string;
+          "id_recurrencia"?: string;
+          "id_ocurrencia"?: string | null;
+          "accion"?: string;
+          "detalle"?: Json;
+          "creado_en"?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "historial_recurrencias_id_ocurrencia_fkey";
+            columns: ["id_ocurrencia"];
+            isOneToOne: false;
+            referencedRelation: "ocurrencias_recurrentes";
+            referencedColumns: ["id_ocurrencia"];
+          },
+          {
+            foreignKeyName: "historial_recurrencias_id_recurrencia_fkey";
+            columns: ["id_recurrencia"];
+            isOneToOne: false;
+            referencedRelation: "config_recurrencias";
+            referencedColumns: ["id_recurrencia"];
+          },
+          {
+            foreignKeyName: "historial_recurrencias_id_usuario_fkey";
             columns: ["id_usuario"];
             isOneToOne: false;
             referencedRelation: "usuarios";
@@ -149,6 +214,7 @@ export type Database = {
           "fecha_operacion": string | null;
           "descripcion_detalle": string | null;
           "es_automatico": boolean | null;
+          "id_ocurrencia": string | null;
         };
         Insert: {
           "id_movimiento"?: string;
@@ -160,6 +226,7 @@ export type Database = {
           "fecha_operacion"?: string | null;
           "descripcion_detalle"?: string | null;
           "es_automatico"?: boolean | null;
+          "id_ocurrencia"?: string | null;
         };
         Update: {
           "id_movimiento"?: string;
@@ -171,6 +238,7 @@ export type Database = {
           "fecha_operacion"?: string | null;
           "descripcion_detalle"?: string | null;
           "es_automatico"?: boolean | null;
+          "id_ocurrencia"?: string | null;
         };
         Relationships: [
           {
@@ -181,6 +249,13 @@ export type Database = {
             referencedColumns: ["id_categoria"];
           },
           {
+            foreignKeyName: "movimientos_id_ocurrencia_fkey";
+            columns: ["id_ocurrencia"];
+            isOneToOne: true;
+            referencedRelation: "ocurrencias_recurrentes";
+            referencedColumns: ["id_ocurrencia"];
+          },
+          {
             foreignKeyName: "movimientos_id_tipo_fkey";
             columns: ["id_tipo"];
             isOneToOne: false;
@@ -189,6 +264,80 @@ export type Database = {
           },
           {
             foreignKeyName: "movimientos_id_usuario_fkey";
+            columns: ["id_usuario"];
+            isOneToOne: false;
+            referencedRelation: "usuarios";
+            referencedColumns: ["id_usuario"];
+          },
+        ];
+      };
+      "ocurrencias_recurrentes": {
+        Row: {
+          "id_ocurrencia": string;
+          "id_recurrencia": string;
+          "id_usuario": string;
+          "fecha_programada": string;
+          "fecha_prevista": string;
+          "nombre": string;
+          "id_tipo": number;
+          "id_categoria": string | null;
+          "monto_previsto": number;
+          "estado": string;
+          "automatica": boolean;
+          "creada_en": string;
+        };
+        Insert: {
+          "id_ocurrencia"?: string;
+          "id_recurrencia": string;
+          "id_usuario": string;
+          "fecha_programada": string;
+          "fecha_prevista": string;
+          "nombre": string;
+          "id_tipo": number;
+          "id_categoria"?: string | null;
+          "monto_previsto": number | DecimalString;
+          "estado"?: string;
+          "automatica"?: boolean;
+          "creada_en"?: string;
+        };
+        Update: {
+          "id_ocurrencia"?: string;
+          "id_recurrencia"?: string;
+          "id_usuario"?: string;
+          "fecha_programada"?: string;
+          "fecha_prevista"?: string;
+          "nombre"?: string;
+          "id_tipo"?: number;
+          "id_categoria"?: string | null;
+          "monto_previsto"?: number | DecimalString;
+          "estado"?: string;
+          "automatica"?: boolean;
+          "creada_en"?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ocurrencias_recurrentes_id_categoria_fkey";
+            columns: ["id_categoria"];
+            isOneToOne: false;
+            referencedRelation: "categorias";
+            referencedColumns: ["id_categoria"];
+          },
+          {
+            foreignKeyName: "ocurrencias_recurrentes_id_recurrencia_fkey";
+            columns: ["id_recurrencia"];
+            isOneToOne: false;
+            referencedRelation: "config_recurrencias";
+            referencedColumns: ["id_recurrencia"];
+          },
+          {
+            foreignKeyName: "ocurrencias_recurrentes_id_tipo_fkey";
+            columns: ["id_tipo"];
+            isOneToOne: false;
+            referencedRelation: "tipos_movimiento";
+            referencedColumns: ["id_tipo"];
+          },
+          {
+            foreignKeyName: "ocurrencias_recurrentes_id_usuario_fkey";
             columns: ["id_usuario"];
             isOneToOne: false;
             referencedRelation: "usuarios";
@@ -293,7 +442,55 @@ export type Database = {
       };
     };
     Views: { [_ in never]: never };
-    Functions: { [_ in never]: never };
+    Functions: {
+      "actualizar_pendientes": {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
+      };
+      "cambiar_ocurrencia": {
+        Args: {
+          "p_id": string | null;
+          "p_accion": string | null;
+          "p_fecha": string | null;
+        };
+        Returns: undefined;
+      };
+      "cambiar_recurrencia": {
+        Args: {
+          "p_id": string | null;
+          "p_accion": string | null;
+        };
+        Returns: undefined;
+      };
+      "confirmar_ocurrencia": {
+        Args: {
+          "p_id": string | null;
+          "p_monto": number | DecimalString | null;
+          "p_fecha": string | null;
+          "p_metodo": string | null;
+        };
+        Returns: string;
+      };
+      "guardar_recurrencia": {
+        Args: {
+          "p_id": string | null;
+          "p_nombre": string | null;
+          "p_tipo": number | null;
+          "p_categoria": string | null;
+          "p_monto": number | DecimalString | null;
+          "p_frecuencia": string | null;
+          "p_dia": number | null;
+          "p_inicio": string | null;
+          "p_fin": string | null;
+          "p_automatica": boolean | null;
+        };
+        Returns: string;
+      };
+      "procesar_recurrencias": {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
+      };
+    };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
   };

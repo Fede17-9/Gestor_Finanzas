@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { createFinanceReader } from '@/lib/finance-data';
 import { amountToCents, centsToDecimal, civilToday, formatAmount, isCivilDate, movementSign, readAllPages } from '@/lib/finance';
 import type { Category, Movement } from '@/lib/finance';
-import { ArrowLeftRight, Plus, Calendar, Search, X, TrendingUp, TrendingDown, Layers, CreditCard, Repeat, Zap, Pencil, Trash2, AlertTriangle } from 'lucide-react';
+import { ArrowLeftRight, Plus, Search, X, TrendingUp, TrendingDown, Layers, CreditCard, Zap, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 import ConfirmModal from '@/components/ConfirmModal';
 
 const reader = createFinanceReader(supabase);
@@ -25,10 +25,6 @@ export default function MovimientosPage() {
   const [metodoPago, setMetodoPago] = useState('Efectivo');
   const [categoria, setCategoria] = useState('');
   const [fechaOperacion, setFechaOperacion] = useState(civilToday);
-  const [isRecurrente, setIsRecurrente] = useState(false);
-  const [frecuencia, setFrecuencia] = useState('Mensual');
-  const [diaEjecucion, setDiaEjecucion] = useState('1');
-  const [fechaFin, setFechaFin] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [toasts, setToasts] = useState<{ id: number; msg: string; type: 'ok' | 'err' }[]>([]);
@@ -106,6 +102,7 @@ export default function MovimientosPage() {
   }
 
   function abrirEditar(movement: Movement) {
+    if (movement.id_ocurrencia) { router.push('/dashboard/recurrencias'); return; }
     setEditMov(movement);
     setEditTipo(String(movement.id_tipo));
     setEditMonto(String(movement.monto_transaccion));
@@ -146,6 +143,7 @@ export default function MovimientosPage() {
   }
 
   function handleEliminar(movement: Movement) {
+    if (movement.id_ocurrencia) { router.push('/dashboard/recurrencias'); return; }
     setPendingMov(movement);
     setConfirmOpen(true);
   }
@@ -183,13 +181,6 @@ export default function MovimientosPage() {
       validateDate(fechaOperacion);
       if (!descripcion.trim()) throw new Error('La descripción es obligatoria.');
       if (!['1', '2'].includes(tipoMovimiento)) throw new Error('Tipo de movimiento inválido.');
-      if (isRecurrente) {
-        if (!['Diario', 'Semanal', 'Mensual', 'Anual'].includes(frecuencia)) throw new Error('Frecuencia inválida.');
-        if (fechaFin && (!isCivilDate(fechaFin) || fechaFin < fechaOperacion)) throw new Error('La fecha final no puede ser anterior al inicio.');
-        if (frecuencia === 'Mensual' && (!Number.isInteger(Number(diaEjecucion)) || Number(diaEjecucion) < 1 || Number(diaEjecucion) > 31)) {
-          throw new Error('El día mensual debe estar entre 1 y 31.');
-        }
-      }
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.replace('/login'); return; }
       const categoryId = await resolveCategory(categoria, session.user.id);
@@ -199,22 +190,10 @@ export default function MovimientosPage() {
         descripcion_detalle: descripcion.trim(), es_automatico: false,
       }]);
       if (error) throw new Error('No se pudo guardar el movimiento.');
-      let recurrenceFailed = false;
-      if (isRecurrente) {
-        const { error: recurrenceError } = await supabase.from('config_recurrencias').insert([{
-          id_usuario: session.user.id, id_tipo: Number(tipoMovimiento), id_categoria: categoryId,
-          monto_recurrente: centsToDecimal(cents), frecuencia,
-          dia_ejecucion: frecuencia === 'Mensual' ? Number(diaEjecucion) : Number(fechaOperacion.slice(8, 10)),
-          fecha_inicio: fechaOperacion, fecha_fin: fechaFin || null,
-        }]);
-        recurrenceFailed = Boolean(recurrenceError);
-      }
       setIsModalOpen(false);
       setMonto(''); setDescripcion(''); setCategoria(''); setMetodoPago('Efectivo');
-      setFechaOperacion(civilToday()); setIsRecurrente(false); setFrecuencia('Mensual');
-      setDiaEjecucion('1'); setFechaFin('');
-      toast(recurrenceFailed ? 'El movimiento se guardó, pero la regla no pudo crearse. No repitas el movimiento.' : 'Movimiento guardado.',
-        recurrenceFailed ? 'err' : 'ok');
+      setFechaOperacion(civilToday());
+      toast('Movimiento guardado.');
       await refreshData();
     } catch (error) {
       toast(error instanceof Error ? error.message : 'No se pudo guardar el movimiento.', 'err');
@@ -406,14 +385,14 @@ export default function MovimientosPage() {
                           <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                             <button
                               onClick={() => abrirEditar(mov)}
-                              title="Editar movimiento"
+                              title={mov.id_ocurrencia ? 'Gestionar en Recurrencias' : 'Editar movimiento'}
                               className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-all"
                             >
                               <Pencil size={13} />
                             </button>
                             <button
                               onClick={() => handleEliminar(mov)}
-                              title="Eliminar movimiento"
+                              title={mov.id_ocurrencia ? 'Deshacer confirmación en Recurrencias' : 'Eliminar movimiento'}
                               className="p-1.5 rounded-lg bg-[#ff3939]/10 hover:bg-[#ff3939]/20 text-[#ff3939] border border-[#ff3939]/20 hover:border-[#ff3939]/40 transition-all"
                             >
                               <Trash2 size={13} />
@@ -518,55 +497,7 @@ export default function MovimientosPage() {
                 </div>
               </div>
 
-              {/* Automátización / Recurrencia */}
-              <div className="mt-2 border border-zinc-800 rounded-xl p-4 bg-zinc-900/50">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={isRecurrente} onChange={(e) => setIsRecurrente(e.target.checked)} className="peer sr-only" />
-                  <div className="w-10 h-5 bg-zinc-800 rounded-full peer-checked:bg-[#39FF14] relative transition-colors">
-                    <div className="absolute top-1 left-1 bg-white w-3 h-3 rounded-full transition-transform peer-checked:translate-x-5 shadow-sm"></div>
-                  </div>
-                  <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-                    <Repeat size={14} className={isRecurrente ? "text-[#39FF14]" : "text-zinc-600"} />
-                    ¿Programar repetición?
-                  </span>
-                </label>
-
-                {isRecurrente && (
-                  <div className="mt-4 pt-4 border-t border-zinc-800/50 animate-in fade-in slide-in-from-top-2 flex flex-col gap-3">
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Frecuencia de Repetición</label>
-                      <select value={frecuencia} onChange={(e) => setFrecuencia(e.target.value)}
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white outline-none transition-all text-xs">
-                        <option value="Diario">Diario</option>
-                        <option value="Semanal">Semanal</option>
-                        <option value="Mensual">Mensual</option>
-                        <option value="Anual">Anual</option>
-                      </select>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-1">
-                          <Calendar size={12} /> Día del mes (mensual)
-                        </label>
-                        <input type="number" min="1" max="31" disabled={frecuencia !== "Mensual"} required={frecuencia === "Mensual"} value={diaEjecucion} onChange={(e) => setDiaEjecucion(e.target.value)}
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white outline-none text-xs"
-                          placeholder="1-31" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Fecha Fin (Opcional)</label>
-                        <input type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)}
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-400 outline-none text-xs [color-scheme:dark]" />
-                      </div>
-                    </div>
-
-                    <p className="text-[9px] text-zinc-500 font-mono mt-1 tracking-widest leading-relaxed">
-                      La regla aparecerá en el calendario como proyección. El registro automático está temporalmente desactivado; registra cada pago o cobro cuando ocurra.
-                    </p>
-                  </div>
-                )}
-              </div>
+              <p className="text-xs text-zinc-400">Para programar pagos o cobros, crea una regla en <a className="underline text-emerald-300" href="/dashboard/recurrencias">Recurrencias</a>.</p>
 
               <button type="submit" disabled={isSubmitting} className="w-full bg-white text-black font-black uppercase tracking-widest text-[11px] py-4 mt-2 rounded-xl hover:bg-zinc-200 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:shadow-[0_0_20px_rgba(255,255,255,0.3)]">
                 {isSubmitting ? "PROCESANDO..." : "GRABAR EN BITÁCORA"}

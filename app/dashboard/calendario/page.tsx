@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { createFinanceReader } from '@/lib/finance-data';
 import { calendarEvents, calendarTotals, civilToday, civilToDate, formatAmount, movementSign } from '@/lib/finance';
-import type { CalendarEvent, Movement, Profile, Recurrence } from '@/lib/finance';
+import type { CalendarEvent, Movement, Occurrence, Profile, Recurrence } from '@/lib/finance';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Zap, CheckCircle2 } from 'lucide-react';
 
 const reader = createFinanceReader(supabase);
@@ -16,6 +16,7 @@ export default function CalendarioPage() {
   const [loadError, setLoadError] = useState('');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [recurrencias, setRecurrencias] = useState<Recurrence[]>([]);
+  const [ocurrencias, setOcurrencias] = useState<Occurrence[]>([]);
   const [movimientosReales, setMovimientosReales] = useState<Movement[]>([]);
   const [currentDate, setCurrentDate] = useState(() => civilToDate(civilToday()));
 
@@ -26,10 +27,11 @@ export default function CalendarioPage() {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw new Error('No se pudo comprobar tu sesión.');
         if (!session) { router.replace('/login'); return; }
-        const [rules, movements, userProfile] = await Promise.all([
+        const [rules, movements, userProfile, occurrences] = await Promise.all([
           reader.recurrences(session.user.id), reader.movements(session.user.id), reader.profile(session.user.id),
+          reader.occurrences(session.user.id),
         ]);
-        if (active) { setRecurrencias(rules); setMovimientosReales(movements); setProfile(userProfile); }
+        if (active) { setRecurrencias(rules); setMovimientosReales(movements); setProfile(userProfile); setOcurrencias(occurrences); }
       } catch (error) {
         if (active) setLoadError(error instanceof Error ? error.message : 'No se pudo cargar el calendario.');
       } finally {
@@ -47,12 +49,12 @@ export default function CalendarioPage() {
   const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
   const computed = useMemo<{ events: Record<number, CalendarEvent[]>; totals: ReturnType<typeof calendarTotals> | null; error: string }>(() => {
     try {
-      const events = calendarEvents(movimientosReales, recurrencias, currentDate.getFullYear(), currentDate.getMonth());
+      const events = calendarEvents(movimientosReales, recurrencias, currentDate.getFullYear(), currentDate.getMonth(), ocurrencias);
       return { events, totals: calendarTotals(events), error: '' };
     } catch (error) {
       return { events: {}, totals: null, error: error instanceof Error ? error.message : 'No se pudo calcular el calendario.' };
     }
-  }, [movimientosReales, recurrencias, currentDate]);
+  }, [movimientosReales, recurrencias, currentDate, ocurrencias]);
   if (loadError || computed.error) {
     return <div role="alert" className="p-6 text-red-300">
       {loadError || computed.error}
@@ -71,7 +73,8 @@ export default function CalendarioPage() {
     <div className="max-w-7xl mx-auto pb-10 animate-in fade-in duration-500 relative">
 
       <p className="text-sm text-zinc-400 mb-6">
-        Las proyecciones no cambian tu saldo ni confirman un pago. Pueden incluir operaciones ya registradas; todavía no se concilian automáticamente. El registro automático está temporalmente desactivado.
+        Las previsiones y los pendientes no cambian tu saldo. Al confirmar un vencimiento, aparece su movimiento real una sola vez.
+        Gestiona los vencimientos en <a className="underline text-emerald-300" href="/dashboard/recurrencias">Recurrencias</a>. Los movimientos antiguos sin vínculo permanecen independientes.
       </p>
 
       {/* Header */}

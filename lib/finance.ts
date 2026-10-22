@@ -20,6 +20,16 @@ export interface Recurrence extends Omit<Row<'config_recurrencias'>, 'monto_recu
   categorias: { nombre_categoria: string } | null;
 }
 
+export interface Occurrence extends Omit<Row<'ocurrencias_recurrentes'>, 'monto_previsto'> {
+  monto_previsto: number | string;
+  categorias: { nombre_categoria: string } | null;
+}
+
+export function occurrenceStatus(occurrence: Pick<Occurrence, 'estado' | 'fecha_prevista'>, today = civilToday()): string {
+  if (occurrence.estado !== 'pendiente') return occurrence.estado;
+  return occurrence.fecha_prevista < today ? 'vencida' : 'pendiente';
+}
+
 export interface Profile extends Pick<Row<'usuarios'>, 'nombre_completo' | 'username' | 'url_avatar'> {
   codigo_moneda: string;
 }
@@ -136,7 +146,7 @@ export function summarizeMovements(movements: readonly Movement[], year: number,
 }
 
 export function recurrenceDates(rule: Recurrence, year: number, month: number): string[] {
-  if (!rule.estado_activo) return [];
+  if (!rule.estado_activo || rule.archivada) return [];
   if (!isCivilDate(rule.fecha_inicio) || (rule.fecha_fin && (!isCivilDate(rule.fecha_fin) || rule.fecha_fin < rule.fecha_inicio))) {
     throw new Error('Hay una recurrencia con fechas inválidas.');
   }
@@ -153,7 +163,7 @@ export function recurrenceDates(rule: Recurrence, year: number, month: number): 
   const dates: string[] = [];
   for (let day = 1; day <= days; day++) {
     const date = monthKey(year, month) + '-' + String(day).padStart(2, '0');
-    if (date < rule.fecha_inicio || (rule.fecha_fin && date > rule.fecha_fin)) continue;
+    if (date < rule.fecha_inicio || (rule.generar_desde && date < rule.generar_desde) || (rule.fecha_fin && date > rule.fecha_fin)) continue;
     const elapsed = Math.round((Date.parse(date + 'T00:00:00Z') - start) / 86_400_000);
     if (rule.frecuencia === 'Diario' ||
       (rule.frecuencia === 'Semanal' && elapsed % 7 === 0) ||
@@ -174,16 +184,27 @@ export interface CalendarEvent {
   isAutoDB: boolean;
 }
 
-export function calendarEvents(movements: readonly Movement[], rules: readonly Recurrence[], year: number, month: number) {
+export function calendarEvents(movements: readonly Movement[], rules: readonly Recurrence[], year: number, month: number, occurrences: readonly Occurrence[] = []) {
   const days = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
   const events: Record<number, CalendarEvent[]> = Object.fromEntries(Array.from({ length: days }, (_, i) => [i + 1, []]));
+  const stored = new Set(occurrences.map(item => item.id_recurrencia + ':' + item.fecha_programada));
   for (const rule of rules) {
     for (const date of recurrenceDates(rule, year, month)) {
+      if (stored.has(rule.id_recurrencia + ':' + date)) continue;
       events[Number(date.slice(8, 10))].push({
         key: 'forecast:' + rule.id_recurrencia + ':' + date, id_tipo: rule.id_tipo,
-        monto_recurrente: rule.monto_recurrente, categorias: rule.categorias, isReal: false, isAutoDB: false,
+        monto_recurrente: rule.monto_recurrente, categorias: { nombre_categoria: rule.nombre || rule.categorias?.nombre_categoria || 'Recurrencia' }, isReal: false, isAutoDB: false,
       });
     }
+  }
+  for (const occurrence of occurrences) {
+    if (occurrence.estado !== 'pendiente' || !occurrence.fecha_prevista.startsWith(monthKey(year, month) + '-')) continue;
+    if (!isCivilDate(occurrence.fecha_prevista)) throw new Error('Vencimiento con fecha inválida.');
+    events[Number(occurrence.fecha_prevista.slice(8, 10))].push({
+      key: 'pending:' + occurrence.id_ocurrencia, id_tipo: occurrence.id_tipo,
+      monto_recurrente: occurrence.monto_previsto, categorias: { nombre_categoria: occurrence.nombre },
+      isReal: false, isAutoDB: false,
+    });
   }
   for (const movement of movements) {
     const date = movementDate(movement.fecha_operacion);

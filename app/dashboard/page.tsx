@@ -90,7 +90,7 @@ export default function DashboardPage() {
       />
       
       <p className="text-sm text-zinc-400 mb-6">
-        Las recurrencias se muestran como proyecciones en el calendario. El registro automático está temporalmente desactivado; registra cada operación cuando ocurra.
+        Tu saldo incluye solo movimientos confirmados. En Recurrencias puedes revisar pendientes, confirmar pagos o cobros y consultar su historial.
       </p>
 
       {/* Cards de Métricas Rápidas conectadas a Supabase */}

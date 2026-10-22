@@ -17,6 +17,14 @@ export async function checkQueryContract(client: AppSupabaseClient) {
   client.from('movimientos').update({ id_tipo: 'Egreso' });
   // @ts-expect-error A category name is mandatory.
   client.from('categorias').insert({ id_usuario: 'owner' });
+  // @ts-expect-error RPC names are checked against the migrated schema.
+  client.rpc('confirmar_pago_inventado');
+  // @ts-expect-error Confirmation must provide the amount, date and payment method.
+  client.rpc('confirmar_ocurrencia', { p_id: 'occurrence' });
+  // @ts-expect-error RPC numeric inputs do not accept arbitrary strings.
+  client.rpc('confirmar_ocurrencia', { p_id: 'occurrence', p_monto: 'incorrecto', p_fecha: '2026-10-22', p_metodo: 'Efectivo' });
+  client.rpc('confirmar_ocurrencia', { p_id: 'occurrence', p_monto: centsToDecimal(123), p_fecha: '2026-10-22', p_metodo: 'Efectivo' });
+  client.rpc('actualizar_pendientes');
 
   client.from('movimientos').insert({
     id_usuario: 'owner', id_tipo: 2, monto_transaccion: centsToDecimal(123),

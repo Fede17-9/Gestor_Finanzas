@@ -1,516 +1,204 @@
 "use client";
 
-import { useCallback, useEffect, useState, useRef } from "react";
-import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
-import { createFinanceReader, normalizeRecurrence } from '@/lib/finance-data';
-import { amountToCents, centsToDecimal, formatAmount, isCivilDate, readAllPages } from '@/lib/finance';
-import type { DecimalString } from '@/lib/database.types';
-import type { Recurrence } from '@/lib/finance';
-import {
-  Repeat, Search, X, Pencil, Trash2, Pause, Play,
-  TrendingUp, TrendingDown, AlertTriangle,
-  Loader2, Zap
-} from "lucide-react";
-import ConfirmModal from "@/components/ConfirmModal";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { createFinanceReader } from '@/lib/finance-data';
+import { amountToCents, centsToDecimal, civilToday, formatAmount, isCivilDate, occurrenceStatus, readAllPages } from '@/lib/finance';
+import type { Category, Movement, Occurrence, Recurrence } from '@/lib/finance';
+import type { Row } from '@/lib/database.types';
+import { Plus, RefreshCw, Repeat, X } from 'lucide-react';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+const reader = createFinanceReader(supabase);
+const input = 'w-full rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-white [color-scheme:dark]';
+const button = 'rounded-lg border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-wait';
+const blank = () => ({ id: '', nombre: '', tipo: '2', categoria: '', monto: '', frecuencia: 'Mensual', dia: String(Number(civilToday().slice(8))), inicio: civilToday(), fin: '', automatica: false });
+type Form = ReturnType<typeof blank>;
+type Action = { occurrence: Occurrence; kind: 'confirmar' | 'reprogramar' | 'omitir' | 'reabrir' | 'deshacer' } | { rule: Recurrence; kind: 'pausar' | 'reactivar' | 'archivar' };
+const labels: Record<string, string> = { pendiente: 'Pendiente', vencida: 'Vencida', confirmada: 'Confirmada', omitida: 'Omitida', regla_creada: 'Regla creada', regla_editada: 'Regla editada', confirmacion_manual: 'Confirmación manual', confirmacion_automatica: 'Confirmación automática', deshacer: 'Confirmación deshecha', reprogramar: 'Fecha reprogramada', omitir: 'Vencimiento omitido', reabrir: 'Devuelto a pendiente', pausar: 'Regla pausada', reactivar: 'Regla reactivada', archivar: 'Regla archivada' };
 
-type Recurrencia = Recurrence;
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const inputCls =
-  "w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white text-sm " +
-  "focus:outline-none focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] " +
-  "transition-all placeholder-zinc-600 [color-scheme:dark]";
-const labelCls =
-  "block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1";
-
-// ─── Component ────────────────────────────────────────────────────────────────
+function activityDetail(event: Row<'historial_recurrencias'>, currency: string) {
+  const detail = event.detalle;
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return '';
+  const amount = detail.monto ?? detail.monto_transaccion;
+  const date = detail.fecha ?? detail.fecha_operacion;
+  const parts: string[] = [];
+  if (typeof amount === 'number' || typeof amount === 'string') parts.push(formatAmount(amount, currency));
+  if (typeof date === 'string') parts.push(date.slice(0, 10));
+  if (typeof detail.fecha_anterior === 'string' && typeof detail.fecha_nueva === 'string') parts.push(detail.fecha_anterior + ' a ' + detail.fecha_nueva);
+  return parts.length ? ' · ' + parts.join(' · ') : '';
+}
 
 export default function RecurrenciasPage() {
   const router = useRouter();
-  const toastId = useRef(0);
+  const [rules, setRules] = useState<Recurrence[]>([]);
+  const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
+  const [movements, setMovements] = useState<Movement[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [history, setHistory] = useState<Row<'historial_recurrencias'>[]>([]);
+  const [currency, setCurrency] = useState('COP');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
+  const [form, setForm] = useState<Form | null>(null);
+  const [action, setAction] = useState<Action | null>(null);
+  const [realAmount, setRealAmount] = useState('');
+  const [date, setDate] = useState(civilToday);
+  const [method, setMethod] = useState('Transferencia');
+  const [filter, setFilter] = useState('pendiente');
+  const [search, setSearch] = useState('');
+  const [limit, setLimit] = useState(50);
 
-  const [userId, setUserId]               = useState<string | null>(null);
-  const [recurrencias, setRecurrencias]   = useState<Recurrencia[]>([]);
-  const [loading, setLoading]             = useState(true);
-  const [currency, setCurrency]           = useState('COP');
-  const [loadError, setLoadError]         = useState('');
-  const [searchTerm, setSearchTerm]       = useState("");
-  const [toasts, setToasts]               = useState<{ id: number; msg: string; type: "ok" | "err" }[]>([]);
-
-  // ── Modal Editar ──────────────────────────────────────────────────────────
-  const [editRec, setEditRec]             = useState<Recurrencia | null>(null);
-  const [eMonto, setEMonto]               = useState("");
-  const [eFrecuencia, setEFrecuencia]     = useState("Mensual");
-  const [eFechaInicio, setEFechaInicio]   = useState("");
-  const [eFechaFin, setEFechaFin]         = useState("");
-  const [isSaving, setIsSaving]           = useState(false);
-
-  // ── Modal Confirmar ───────────────────────────────────────────────────────
-  const [confirmOpen, setConfirmOpen]     = useState(false);
-  const [confirmMsg, setConfirmMsg]       = useState({ title: "", message: "", variant: "danger" as "danger" | "success" });
-  const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
-
-  // ── Toast ─────────────────────────────────────────────────────────────────
-  function toast(msg: string, type: "ok" | "err" = "ok") {
-    const id = ++toastId.current;
-    setToasts(p => [...p, { id, msg, type }]);
-    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3500);
-  }
-
-  // ── Load ──────────────────────────────────────────────────────────────────
-  const loadData = useCallback(async (uid: string) => {
-    setLoading(true);
-    try {
-      const [profile, rules] = await Promise.all([
-        createFinanceReader(supabase).profile(uid),
-        readAllPages(async (from, to) => {
-          const { data, error } = await supabase.from('config_recurrencias').select('*, categorias(nombre_categoria)')
-            .eq('id_usuario', uid).order('fecha_inicio', { ascending: false })
-            .order('id_recurrencia', { ascending: true }).range(from, to);
-          if (error || !data) throw new Error('No se pudieron cargar las reglas.');
-          return data.map(normalizeRecurrence);
-        }),
-      ]);
-      setCurrency(profile.codigo_moneda);
-      setRecurrencias(rules);
-      setLoadError('');
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar las reglas.');
-    } finally {
-      setLoading(false);
-    }
+  const fetchData = useCallback(async () => {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error || !session) { router.replace('/login'); throw new Error('Vuelve a iniciar sesión.'); }
+    const uid = session.user.id;
+    const [rules, occurrences, movements, profile, categories, events] = await Promise.all([
+      reader.recurrences(uid, false), reader.occurrences(uid), reader.movements(uid), reader.profile(uid),
+      readAllPages(async (from, to) => {
+        const { data, error } = await supabase.from('categorias').select('id_categoria,nombre_categoria')
+          .or('id_usuario.eq.' + uid + ',id_usuario.is.null').order('id_categoria').range(from, to);
+        if (error || !data) throw new Error('No se pudieron cargar las categorías.');
+        return data;
+      }),
+      supabase.from('historial_recurrencias').select('*').eq('id_usuario', uid).order('creado_en', { ascending: false }).order('id_evento').limit(30),
+    ]);
+    if (events.error || !events.data) throw new Error('No se pudo cargar el historial de recurrencias.');
+    return { rules, occurrences, movements, profile, categories, events: events.data };
+  }, [router]);
+  const apply = useCallback((snapshot: Awaited<ReturnType<typeof fetchData>>) => {
+    setRules(snapshot.rules); setOccurrences(snapshot.occurrences); setMovements(snapshot.movements);
+    setCurrency(snapshot.profile.codigo_moneda); setCategories(snapshot.categories); setHistory(snapshot.events); setLoadError('');
   }, []);
-
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { router.push("/login"); return; }
-      setUserId(session.user.id);
-      loadData(session.user.id);
-    });
-  }, [router, loadData]);
+    let active = true;
+    fetchData().then(snapshot => { if (active) apply(snapshot); })
+      .catch(error => { if (active) setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar los datos.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [fetchData, apply]);
 
-  // ── Confirm helper ────────────────────────────────────────────────────────
-  function askConfirm(title: string, message: string, variant: "danger" | "success", action: () => Promise<void>) {
-    setConfirmMsg({ title, message, variant });
-    setPendingAction(() => action);
-    setConfirmOpen(true);
-  }
-
-  async function handleConfirm() {
-    setConfirmOpen(false);
-    if (pendingAction) await pendingAction();
-    setPendingAction(null);
-  }
-
-  // ── Pausar / Reactivar ────────────────────────────────────────────────────
-  function toggleEstado(rec: Recurrencia) {
-    const next = !rec.estado_activo;
-    askConfirm(
-      next ? "Reactivar recurrencia" : "Pausar recurrencia",
-      next
-        ? `¿Reactivar "${rec.categorias?.nombre_categoria ?? "Sin categoría"}"? Volverá a aparecer en las proyecciones.`
-        : `¿Pausar "${rec.categorias?.nombre_categoria ?? "Sin categoría"}"? Se ocultará de las proyecciones mientras esté inactiva.`,
-      next ? "success" : "danger",
-      async () => {
-        const { error } = await supabase
-          .from("config_recurrencias")
-          .update({ estado_activo: next })
-          .eq("id_recurrencia", rec.id_recurrencia)
-          .eq("id_usuario", rec.id_usuario);
-        if (error) {
-          toast("No se pudo cambiar el estado.", "err");
-        } else {
-          toast(next ? "Recurrencia reactivada." : "Recurrencia pausada.");
-          if (userId) loadData(userId);
-        }
-      }
-    );
-  }
-
-  // ── Eliminar ──────────────────────────────────────────────────────────────
-  function eliminarRec(rec: Recurrencia) {
-    askConfirm(
-      "Eliminar regla recurrente",
-      `Se eliminará la regla "${rec.categorias?.nombre_categoria ?? "Sin categoría"}". Los movimientos históricos generados por esta regla NO serán eliminados.`,
-      "danger",
-      async () => {
-        const { data, error } = await supabase
-          .from("config_recurrencias")
-          .delete()
-          .eq("id_recurrencia", rec.id_recurrencia)
-          .eq("id_usuario", rec.id_usuario)
-          .select();
-
-        if (error) {
-          toast("No se pudo eliminar la regla.", "err");
-        } else if (!data || data.length === 0) {
-          toast("No se encontró la regla o no tienes permiso para eliminarla.", "err");
-        } else {
-          toast("Regla eliminada. Historial de movimientos intacto.");
-          if (userId) loadData(userId);
-        }
-      }
-    );
-  }
-
-  // ── Abrir editar ──────────────────────────────────────────────────────────
-  function abrirEditar(rec: Recurrencia) {
-    setEditRec(rec);
-    setEMonto(String(rec.monto_recurrente));
-    setEFrecuencia(rec.frecuencia);
-    setEFechaInicio(rec.fecha_inicio);
-    setEFechaFin(rec.fecha_fin ?? "");
-  }
-
-  // ── Guardar edición ───────────────────────────────────────────────────────
-  async function handleGuardar(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editRec) return;
-    let monto: DecimalString;
+  async function run(work: () => Promise<string>) {
+    if (lock.current) return;
+    lock.current = true; setBusy(true); setError(''); setMessage('');
     try {
-      monto = centsToDecimal(amountToCents(eMonto));
-      if (!isCivilDate(eFechaInicio)) throw new Error('La fecha de inicio no es válida.');
-      if (eFechaFin && (!isCivilDate(eFechaFin) || eFechaFin < eFechaInicio)) throw new Error('La fecha final no puede ser anterior al inicio.');
-      if (!['Diario', 'Semanal', 'Mensual', 'Anual'].includes(eFrecuencia)) throw new Error('Frecuencia inválida.');
-    } catch (error) {
-      toast(error instanceof Error ? error.message : 'Datos inválidos.', 'err');
-      return;
-    }
-
-    setIsSaving(true);
-    const { error } = await supabase
-      .from("config_recurrencias")
-      .update({
-        monto_recurrente: monto,
-        frecuencia: eFrecuencia,
-        fecha_inicio: eFechaInicio,
-        fecha_fin: eFechaFin || null,
-      })
-      .eq("id_recurrencia", editRec.id_recurrencia)
-      .eq("id_usuario", editRec.id_usuario);
-
-    if (error) {
-      toast("No se pudo actualizar la regla.", "err");
-    } else {
-      toast("Regla actualizada correctamente.");
-      setEditRec(null);
-      if (userId) loadData(userId);
-    }
-    setIsSaving(false);
+      setMessage(await work());
+      try { apply(await fetchData()); }
+      catch { setLoadError('La operación se guardó, pero no se pudo actualizar la vista. Pulsa Recargar; no repitas la operación.'); }
+    } catch (error) { setError(error instanceof Error ? error.message : 'No se pudo guardar. Intenta de nuevo.'); }
+    finally { lock.current = false; setBusy(false); }
   }
-
-  // ── Filtrado en memoria ───────────────────────────────────────────────────
-  const q = searchTerm.toLowerCase().trim();
-  const filtered = q
-    ? recurrencias.filter(r => {
-        const cat = r.categorias?.nombre_categoria ?? "Sin categoría";
-        const tipo = r.id_tipo === 1 ? "ingreso" : "egreso";
-        return (
-          cat.toLowerCase().includes(q) ||
-          r.frecuencia.toLowerCase().includes(q) ||
-          tipo.includes(q) ||
-          String(r.monto_recurrente).includes(q)
-        );
-      })
-    : recurrencias;
-
-  // ── Helpers visuales ──────────────────────────────────────────────────────
-  function fmtMoney(n: number | string) {
-    return formatAmount(n, currency);
+  function edit(rule?: Recurrence) {
+    setError('');
+    setForm(rule ? { id: rule.id_recurrencia, nombre: rule.nombre, tipo: String(rule.id_tipo), categoria: rule.id_categoria || '', monto: String(rule.monto_recurrente), frecuencia: rule.frecuencia, dia: String(rule.dia_ejecucion || 1), inicio: rule.fecha_inicio, fin: rule.fecha_fin || '', automatica: rule.confirmacion_automatica } : blank());
   }
-  function fmtFecha(f: string | null) {
-    if (!f) return "—";
-    const [y, m, d] = f.split("-");
-    return `${d}/${m}/${y}`;
+  function choose(occurrence: Occurrence, kind: Extract<Action, { occurrence: Occurrence }>['kind']) {
+    setError(''); setRealAmount(String(occurrence.monto_previsto)); setDate(kind === 'reprogramar' ? occurrence.fecha_prevista : civilToday()); setMethod('Transferencia'); setAction({ occurrence, kind });
   }
-
-  // ── Loading ───────────────────────────────────────────────────────────────
-  if (loadError) return <div role="alert" className="text-red-300 p-6">
-    {loadError}
-    <button className="block mt-4 underline" onClick={() => { if (userId) void loadData(userId); }}>Volver a cargar</button>
-  </div>;
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4 text-[#39FF14] font-mono tracking-widest animate-pulse">
-        <Loader2 size={40} className="animate-spin" />
-        <span>CARGANDO REGLAS...</span>
-      </div>
-    );
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (!form) return;
+    await run(async () => {
+      const amount = centsToDecimal(amountToCents(form.monto));
+      if (!isCivilDate(form.inicio) || (form.fin && (!isCivilDate(form.fin) || form.fin < form.inicio))) throw new Error('Revisa las fechas de inicio y fin.');
+      const { error } = await supabase.rpc('guardar_recurrencia', { p_id: form.id || null, p_nombre: form.nombre.trim(), p_tipo: Number(form.tipo), p_categoria: form.categoria || null, p_monto: amount, p_frecuencia: form.frecuencia, p_dia: form.frecuencia === 'Mensual' ? Number(form.dia) : null, p_inicio: form.inicio, p_fin: form.fin || null, p_automatica: form.automatica });
+      if (error) throw new Error(error.code === '23514' ? 'Revisa el importe, la frecuencia y las fechas de la regla.' : error.message);
+      setForm(null);
+      return 'Regla guardada. Los cambios se aplican a vencimientos futuros. Pulsa Actualizar pendientes para preparar los que ya vencen.';
+    });
   }
+  async function execute(event: React.FormEvent) {
+    event.preventDefault();
+    if (!action) return;
+    await run(async () => {
+      if ('rule' in action) {
+        const { error } = await supabase.rpc('cambiar_recurrencia', { p_id: action.rule.id_recurrencia, p_accion: action.kind });
+        if (error) throw new Error(error.message);
+      } else if (action.kind === 'confirmar') {
+        if (!isCivilDate(date) || date > civilToday()) throw new Error('Selecciona la fecha real, hasta hoy.');
+        const { error } = await supabase.rpc('confirmar_ocurrencia', { p_id: action.occurrence.id_ocurrencia, p_monto: centsToDecimal(amountToCents(realAmount)), p_fecha: date, p_metodo: method });
+        if (error) throw new Error(error.message);
+      } else {
+        if (action.kind === 'reprogramar' && !isCivilDate(date)) throw new Error('Selecciona una fecha válida.');
+        const { error } = await supabase.rpc('cambiar_ocurrencia', { p_id: action.occurrence.id_ocurrencia, p_accion: action.kind, p_fecha: action.kind === 'reprogramar' ? date : null });
+        if (error) throw new Error(error.message);
+      }
+      setAction(null);
+      return 'Cambio guardado. El saldo solo cambia al confirmar o deshacer una confirmación.';
+    });
+  }
+  const visible = occurrences.filter(o => (filter === 'todas' || (filter === 'pendiente' ? o.estado === 'pendiente' : occurrenceStatus(o) === filter)) && o.nombre.toLowerCase().includes(search.toLowerCase()));
+  const pending = occurrences.filter(o => o.estado === 'pendiente');
+  const overdue = pending.filter(o => occurrenceStatus(o) === 'vencida');
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  return (
-    <div className="max-w-5xl mx-auto pb-12 relative">
-
-      {/* Toasts */}
-      <div className="fixed top-6 right-6 z-[200] flex flex-col gap-2 pointer-events-none">
-        {toasts.map(t => (
-          <div key={t.id} className={`px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest shadow-2xl border pointer-events-auto animate-in fade-in slide-in-from-right-4 duration-300 ${
-            t.type === "ok"
-              ? "bg-[#09090b] border-[#39FF14]/40 text-[#39FF14]"
-              : "bg-[#09090b] border-[#ff3939]/40 text-[#ff3939]"
-          }`}>{t.msg}</div>
-        ))}
-      </div>
-
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-black text-white tracking-widest uppercase flex items-center gap-3">
-          <Repeat className="text-[#39FF14]" size={30} strokeWidth={2.5} />
-          Recurrencias
-        </h1>
-        <p className="text-zinc-500 font-mono text-[10px] uppercase tracking-widest mt-2 border-l-2 border-[#39FF14] pl-3 py-0.5">
-          Reglas de automatización del motor de sincronización
-        </p>
-      </div>
-
-      {/* Advertencia motor */}
-      <div className="flex items-start gap-3 bg-yellow-400/5 border border-yellow-400/20 rounded-2xl p-4 mb-6">
-        <Zap size={16} className="text-yellow-400 shrink-0 mt-0.5" />
-        <p className="text-[11px] text-yellow-400/80 font-mono leading-relaxed">
-          Estas reglas se usan para las proyecciones del calendario. El registro automático está temporalmente desactivado.
-          Registra cada pago o cobro cuando ocurra; editar una regla no modifica los movimientos históricos.
-        </p>
-      </div>
-
-      {/* Buscador */}
-      <div className="bg-[#09090b] border border-zinc-800/50 p-4 rounded-2xl mb-6 relative overflow-hidden group">
-        <div className="absolute top-0 left-0 w-1 h-full bg-zinc-800 group-hover:bg-[#39FF14] transition-colors duration-500" />
-        <div className="relative flex items-center gap-3 pl-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              placeholder="BUSCAR REGLA..."
-              className="w-full bg-zinc-900/50 border border-zinc-800 text-white text-xs font-mono tracking-wider px-10 py-3.5 rounded-xl focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all placeholder-zinc-600"
-            />
-            {searchTerm && (
-              <button onClick={() => setSearchTerm("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors">
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest whitespace-nowrap shrink-0">
-            {searchTerm ? `${filtered.length} resultado(s)` : `${recurrencias.length} regla(s)`}
-          </span>
-        </div>
-      </div>
-
-      {/* Tabla */}
-      <div className="bg-[#09090b] border border-zinc-800/50 rounded-2xl overflow-hidden shadow-2xl relative">
-        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#39FF14]/30 to-transparent" />
-
-        {recurrencias.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-20 gap-3 text-zinc-600">
-            <Repeat size={32} className="text-zinc-800" />
-            <p className="font-mono text-sm uppercase tracking-widest">Sin reglas activas</p>
-            <p className="font-mono text-[9px] tracking-widest">Crea una desde Movimientos activando el toggle de recurrencia.</p>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-20 gap-3 text-zinc-600">
-            <Search size={28} className="text-zinc-800" />
-            <p className="font-mono text-sm uppercase tracking-widest text-zinc-600">Sin resultados</p>
-            <button onClick={() => setSearchTerm("")} className="text-[10px] font-bold text-[#39FF14] uppercase tracking-widest hover:text-white transition-colors mt-2">
-              Limpiar búsqueda
-            </button>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-zinc-800 text-zinc-500 text-[10px] uppercase font-bold tracking-widest bg-zinc-900/30">
-                  <th className="p-4 pl-6">Categoría / Tipo</th>
-                  <th className="p-4">Frecuencia</th>
-                  <th className="p-4 text-right">Monto</th>
-                  <th className="p-4">Inicio → Fin</th>
-                  <th className="p-4 text-center">Estado</th>
-                  <th className="p-4 text-center w-36">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(rec => {
-                  const isIngreso = rec.id_tipo === 1;
-                  const cat = rec.categorias?.nombre_categoria ?? "Sin categoría";
-                  return (
-                    <tr key={rec.id_recurrencia} className="border-b border-zinc-800/50 hover:bg-zinc-900/40 transition-colors group">
-                      {/* Cat / Tipo */}
-                      <td className="p-4 pl-6">
-                        <div className="flex items-center gap-2">
-                          {isIngreso
-                            ? <TrendingUp size={14} className="text-[#39FF14] shrink-0" />
-                            : <TrendingDown size={14} className="text-[#ff3939] shrink-0" />}
-                          <div>
-                            <p className="text-sm font-bold text-zinc-200">{cat}</p>
-                            <p className={`text-[9px] font-mono tracking-widest uppercase ${isIngreso ? "text-[#39FF14]" : "text-[#ff3939]"}`}>
-                              {isIngreso ? "Ingreso" : "Egreso"}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      {/* Frecuencia */}
-                      <td className="p-4 font-mono text-xs text-zinc-400">
-                        {rec.frecuencia}
-                        {rec.frecuencia === "Mensual" && (
-                          <span className="text-zinc-600 text-[9px] ml-1">día {rec.dia_ejecucion}</span>
-                        )}
-                      </td>
-                      {/* Monto */}
-                      <td className={`p-4 text-right font-mono font-bold text-base ${isIngreso ? "text-[#39FF14]" : "text-white"}`}>
-                        {isIngreso ? "+" : "-"}{fmtMoney(rec.monto_recurrente)}
-                      </td>
-                      {/* Fechas */}
-                      <td className="p-4 font-mono text-[10px] text-zinc-500">
-                        {fmtFecha(rec.fecha_inicio)} → {fmtFecha(rec.fecha_fin)}
-                      </td>
-                      {/* Estado */}
-                      <td className="p-4 text-center">
-                        <span className={`inline-flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full border ${
-                          rec.estado_activo
-                            ? "bg-[#39FF14]/10 text-[#39FF14] border-[#39FF14]/20"
-                            : "bg-zinc-800/50 text-zinc-500 border-zinc-700"
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${rec.estado_activo ? "bg-[#39FF14] shadow-[0_0_6px_rgba(57,255,20,0.8)]" : "bg-zinc-600"}`} />
-                          {rec.estado_activo ? "Activa" : "Pausada"}
-                        </span>
-                      </td>
-                      {/* Acciones */}
-                      <td className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                          {/* Editar */}
-                          <button
-                            onClick={() => abrirEditar(rec)}
-                            title="Editar regla"
-                            className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-all"
-                          >
-                            <Pencil size={12} />
-                          </button>
-                          {/* Pausar / Reactivar */}
-                          <button
-                            onClick={() => toggleEstado(rec)}
-                            title={rec.estado_activo ? "Pausar" : "Reactivar"}
-                            className={`p-1.5 rounded-lg transition-all ${
-                              rec.estado_activo
-                                ? "bg-yellow-400/10 text-yellow-400 hover:bg-yellow-400/20 border border-yellow-400/20"
-                                : "bg-[#39FF14]/10 text-[#39FF14] hover:bg-[#39FF14]/20 border border-[#39FF14]/20"
-                            }`}
-                          >
-                            {rec.estado_activo ? <Pause size={12} /> : <Play size={12} />}
-                          </button>
-                          {/* Eliminar */}
-                          <button
-                            onClick={() => eliminarRec(rec)}
-                            title="Eliminar regla"
-                            className="p-1.5 rounded-lg bg-[#ff3939]/10 hover:bg-[#ff3939]/20 text-[#ff3939] border border-[#ff3939]/20 hover:border-[#ff3939]/40 transition-all"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* ══ Modal Editar ══ */}
-      {editRec && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
-          onClick={e => { if (e.target === e.currentTarget) setEditRec(null); }}>
-          <div className="bg-[#09090b] border border-zinc-800 rounded-3xl p-6 w-full max-w-sm shadow-[0_0_50px_rgba(57,255,20,0.08)] relative">
-            <div className="absolute top-0 left-0 w-full h-[1px] rounded-t-3xl bg-gradient-to-r from-transparent via-[#39FF14]/30 to-transparent" />
-            <button onClick={() => setEditRec(null)} className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors">
-              <X size={18} />
-            </button>
-
-            <h2 className="text-base font-black text-white uppercase tracking-widest mb-1 border-b border-zinc-800 pb-4 flex items-center gap-2">
-              <Pencil size={14} className="text-[#39FF14]" /> Editar Regla
-            </h2>
-
-            {/* Info no editable */}
-            <div className="mt-4 mb-4 p-3 bg-zinc-900/60 border border-zinc-800/60 rounded-xl">
-              <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest mb-2">Campos protegidos (motor)</p>
-              <div className="flex items-center gap-2">
-                {editRec.id_tipo === 1
-                  ? <TrendingUp size={12} className="text-[#39FF14]" />
-                  : <TrendingDown size={12} className="text-[#ff3939]" />}
-                <span className="text-xs text-zinc-400 font-bold">
-                  {editRec.categorias?.nombre_categoria ?? "Sin categoría"} · {editRec.id_tipo === 1 ? "Ingreso" : "Egreso"} · Día {editRec.dia_ejecucion}
-                </span>
-              </div>
-            </div>
-
-            {/* Advertencia */}
-            <div className="flex items-start gap-2 bg-yellow-400/5 border border-yellow-400/20 rounded-xl p-3 mb-4">
-              <AlertTriangle size={12} className="text-yellow-400 shrink-0 mt-0.5" />
-              <p className="text-[9px] text-yellow-400/70 font-mono leading-relaxed">
-                Cambiar frecuencia o fechas modifica la proyección, sin crear ni borrar movimientos registrados.
-              </p>
-            </div>
-
-            <form onSubmit={handleGuardar} className="flex flex-col gap-4">
-              {/* Monto */}
-              <div>
-                <label className={labelCls}>Monto *</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 font-bold text-sm">$</span>
-                  <input type="number" step="0.01" required value={eMonto} onChange={e => setEMonto(e.target.value)}
-                    className={inputCls + " pl-8"} placeholder="0" />
-                </div>
-              </div>
-
-              {/* Frecuencia */}
-              <div>
-                <label className={labelCls}>Frecuencia *</label>
-                <select value={eFrecuencia} onChange={e => setEFrecuencia(e.target.value)} className={inputCls}>
-                  <option value="Diario">Diario</option>
-                  <option value="Semanal">Semanal</option>
-                  <option value="Mensual">Mensual</option>
-                  <option value="Anual">Anual</option>
-                </select>
-              </div>
-
-              {/* Fechas */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelCls}>Fecha inicio *</label>
-                  <input type="date" required value={eFechaInicio} onChange={e => setEFechaInicio(e.target.value)} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Fecha fin</label>
-                  <input type="date" value={eFechaFin} onChange={e => setEFechaFin(e.target.value)} className={inputCls} />
-                </div>
-              </div>
-
-              <button type="submit" disabled={isSaving}
-                className="w-full bg-[#39FF14] text-black font-black uppercase tracking-widest text-xs py-4 rounded-xl hover:bg-[#a3e635] hover:shadow-[0_0_20px_rgba(57,255,20,0.4)] transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                {isSaving ? <><Loader2 size={14} className="animate-spin" /> GUARDANDO...</> : "GUARDAR CAMBIOS"}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ══ ConfirmModal ══ */}
-      <ConfirmModal
-        open={confirmOpen}
-        title={confirmMsg.title}
-        message={confirmMsg.message}
-        confirmText="Confirmar"
-        cancelText="Cancelar"
-        confirmVariant={confirmMsg.variant}
-        onConfirm={handleConfirm}
-        onCancel={() => { setConfirmOpen(false); setPendingAction(null); }}
-      />
-
+  return <div className="mx-auto max-w-6xl space-y-6 pb-12 text-zinc-100">
+    <header className="flex flex-wrap items-center justify-between gap-4">
+      <div><h1 className="flex items-center gap-3 text-3xl font-bold"><Repeat className="text-emerald-400" />Recurrencias</h1><p className="mt-2 text-sm text-zinc-400">Planifica tus pagos y cobros. Confirma lo que ocurrió y deja pendiente lo que se demore.</p></div>
+      <button className={button} disabled={busy || loading || !!loadError} onClick={() => edit()}><Plus className="mr-2 inline" size={16} />Nueva regla</button>
+    </header>
+    <p className="rounded-xl border border-zinc-800 p-4 text-sm text-zinc-400">Las reglas nuevas empiezan hoy o en el futuro. Actualizar pendientes prepara vencimientos hasta hoy, sin confirmar pagos. El modo automático por regla requiere activar la tarea programada en Supabase; funciona con la aplicación cerrada una vez configurada.</p>
+    {loadError && <div role="alert" className="rounded-xl border border-red-800 p-4 text-red-300">{loadError}</div>}
+    {message && <p role="status" className="text-emerald-300">{message}</p>}
+    {error && !form && !action && <p role="alert" className="text-red-300">{error}</p>}
+    <div className="flex flex-wrap items-center gap-3">
+      <button className={button} disabled={busy || loading} onClick={() => void run(async () => { const { data, error } = await supabase.rpc('actualizar_pendientes'); if (error) throw new Error(error.message); return `${data ?? 0} vencimientos nuevos preparados. Los pendientes anteriores se conservan.`; })}><RefreshCw size={14} className="mr-2 inline" />{busy ? 'Procesando…' : 'Actualizar pendientes'}</button>
+      <button className={button} disabled={busy} onClick={() => void run(async () => 'Vista recargada.')}>Recargar</button>
+      <span className="text-sm text-zinc-400">{pending.length} pendientes · {overdue.length} vencidos</span>
     </div>
-  );
+    {loading ? <p role="status">Cargando recurrencias…</p> : !loadError && <>
+      <section className="space-y-4" aria-labelledby="pending-title">
+        <h2 id="pending-title" className="text-xl font-semibold">Vencimientos</h2>
+        <div className="flex flex-wrap gap-3">
+          <label className="sr-only" htmlFor="occurrence-filter">Estado de vencimientos</label><select id="occurrence-filter" className={input + ' sm:!w-auto'} value={filter} onChange={e => { setFilter(e.target.value); setLimit(50); }}><option value="pendiente">Pendientes y vencidos</option><option value="vencida">Solo vencidos</option><option value="confirmada">Confirmados</option><option value="omitida">Omitidos</option><option value="todas">Todos</option></select>
+          <label className="sr-only" htmlFor="occurrence-search">Buscar vencimiento</label><input id="occurrence-search" className={input + ' sm:!w-auto'} placeholder="Buscar por nombre" value={search} onChange={e => { setSearch(e.target.value); setLimit(50); }} />
+        </div>
+        {!visible.length && <p className="text-zinc-400">No hay vencimientos en este filtro. Crea una regla y prepara sus pendientes cuando llegue la fecha.</p>}
+        {visible.slice(0, limit).map(o => {
+          const movement = movements.find(m => m.id_ocurrencia === o.id_ocurrencia);
+          return <article key={o.id_ocurrencia} className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+            <div className="flex flex-wrap justify-between gap-3"><div><h3 className="font-semibold">{o.nombre}</h3><p className="mt-1 text-sm text-zinc-400">{{ 1: 'Ingreso', 2: 'Egreso', 3: 'Inversión', 4: 'Transferencia' }[o.id_tipo]} · Previsto: {formatAmount(o.monto_previsto, currency)} · Fecha: {o.fecha_prevista}</p>{o.fecha_programada !== o.fecha_prevista && <p className="text-xs text-zinc-500">Fecha original: {o.fecha_programada}</p>}{movement && <p className="mt-1 text-sm text-emerald-300">Real: {formatAmount(movement.monto_transaccion, currency)} · {movement.fecha_operacion.slice(0, 10)} · {movement.metodo_pago}</p>}</div><span className={occurrenceStatus(o) === 'vencida' ? 'text-amber-300' : 'text-zinc-400'}>{labels[occurrenceStatus(o)]}{o.automatica && o.estado === 'pendiente' ? ' · Automática' : ''}</span></div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {o.estado === 'pendiente' && <><button disabled={busy} className={button + ' text-emerald-300'} onClick={() => choose(o, 'confirmar')}>Confirmar pago o cobro</button><button disabled={busy} className={button} onClick={() => choose(o, 'reprogramar')}>Reprogramar</button><button disabled={busy} className={button} onClick={() => choose(o, 'omitir')}>Omitir</button></>}
+              {o.estado === 'confirmada' && <button disabled={busy} className={button} onClick={() => choose(o, 'deshacer')}>Deshacer confirmación</button>}
+              {o.estado === 'omitida' && <button disabled={busy} className={button} onClick={() => choose(o, 'reabrir')}>Volver a pendiente</button>}
+            </div>
+          </article>;
+        })}
+        {visible.length > limit && <button className={button} onClick={() => setLimit(limit + 50)}>Mostrar 50 más ({visible.length - limit} restantes)</button>}
+      </section>
+      <section className="space-y-3" aria-labelledby="rules-title"><h2 id="rules-title" className="text-xl font-semibold">Reglas</h2>
+        {!rules.length && <p className="text-zinc-400">Aún no tienes reglas recurrentes.</p>}
+        {rules.map(rule => <article key={rule.id_recurrencia} className="rounded-xl border border-zinc-800 p-4"><div className="flex flex-wrap justify-between gap-3"><div><h3 className="font-semibold">{rule.nombre}</h3><p className="text-sm text-zinc-400">{formatAmount(rule.monto_recurrente, currency)} · {rule.frecuencia}{rule.frecuencia === 'Mensual' ? ` · Día ${rule.dia_ejecucion}` : ''} · {rule.confirmacion_automatica ? 'Confirmación automática' : 'Confirmación manual'}</p><p className="mt-1 text-xs text-zinc-500">Desde {rule.fecha_inicio}{rule.fecha_fin ? ` hasta ${rule.fecha_fin}` : ''} · {rule.categorias?.nombre_categoria || 'Sin categoría'}</p></div><span className="text-sm text-zinc-400">{rule.archivada ? 'Archivada' : !rule.estado_activo ? 'Pausada' : rule.fecha_fin && rule.fecha_fin < civilToday() ? 'Finalizada' : 'Activa'}</span></div>
+          {!rule.archivada && <div className="mt-3 flex flex-wrap gap-2"><button disabled={busy} className={button} onClick={() => edit(rule)}>Editar</button><button disabled={busy} className={button} onClick={() => { setError(''); setAction({ rule, kind: rule.estado_activo ? 'pausar' : 'reactivar' }); }}>{rule.estado_activo ? 'Pausar' : 'Reactivar'}</button><button disabled={busy} className={button} onClick={() => { setError(''); setAction({ rule, kind: 'archivar' }); }}>Archivar</button></div>}
+        </article>)}
+      </section>
+      <section aria-labelledby="history-title"><h2 id="history-title" className="mb-3 text-xl font-semibold">Actividad reciente</h2><p className="mb-3 text-sm text-zinc-500">Últimos 30 cambios. Deshacer conserva una copia del movimiento en el historial.</p><ul className="space-y-2 text-sm text-zinc-400">{history.map(event => <li key={event.id_evento}>{new Date(event.creado_en).toLocaleString('es-CO', { timeZone: 'America/Bogota' })} · {labels[event.accion] || event.accion} · {rules.find(r => r.id_recurrencia === event.id_recurrencia)?.nombre || 'Recurrencia'}{activityDetail(event, currency)}</li>)}</ul></section>
+    </>}
+    {(form || action) && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"><section role="dialog" aria-modal="true" aria-labelledby="recurrence-dialog-title" className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-zinc-700 bg-zinc-950 p-6"><div className="mb-4 flex justify-between gap-3"><h2 id="recurrence-dialog-title" className="text-xl font-semibold">{form ? (form.id ? 'Editar regla' : 'Nueva regla') : action?.kind === 'confirmar' ? 'Confirmar pago o cobro' : action && labels[action.kind]}</h2><button type="button" disabled={busy} aria-label="Cerrar" onClick={() => { setForm(null); setAction(null); setError(''); }}><X /></button></div>
+      {error && <p role="alert" className="mb-4 text-red-300">{error}</p>}
+      {form && <form onSubmit={save}><fieldset disabled={busy} className="space-y-4">
+        <label className="block">Nombre<input autoFocus className={input} required maxLength={120} value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} placeholder="Ej.: Arriendo" /></label>
+        <div className="grid grid-cols-2 gap-3"><label>Tipo<select className={input} value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}><option value="1">Ingreso</option><option value="2">Egreso</option><option value="3">Inversión</option><option value="4">Transferencia</option></select></label><label>Importe<input className={input} required type="number" min="0.01" max="9999999999999.99" step="0.01" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} /></label></div>
+        <label className="block">Categoría<select className={input} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}><option value="">Sin categoría</option>{categories.map(c => <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>)}</select><span className="text-xs text-zinc-500">Puedes crear categorías al registrar un movimiento.</span></label>
+        <div className="grid grid-cols-2 gap-3"><label>Frecuencia<select className={input} value={form.frecuencia} onChange={e => setForm({ ...form, frecuencia: e.target.value })}>{['Diario','Semanal','Mensual','Anual'].map(f => <option key={f}>{f}</option>)}</select></label>{form.frecuencia === 'Mensual' && <label>Día del mes<input className={input} required type="number" min="1" max="31" value={form.dia} onChange={e => setForm({ ...form, dia: e.target.value })} /></label>}</div>
+        <div className="grid grid-cols-2 gap-3"><label>Inicio<input className={input} required type="date" min={form.id ? undefined : civilToday()} max="9999-12-31" value={form.inicio} onChange={e => setForm({ ...form, inicio: e.target.value })} /></label><label>Fin opcional<input className={input} type="date" min={form.inicio} max="9999-12-31" value={form.fin} onChange={e => setForm({ ...form, fin: e.target.value })} /></label></div>
+        <p className="text-xs text-zinc-400">Día 31: se usa el último día en meses cortos. Semanal: mismo día de la semana que el inicio. Anual: misma fecha, ajustando el 29 de febrero al 28 cuando corresponda. Editar no cambia vencimientos ya preparados.</p>
+        <label className="flex items-start gap-3"><input type="checkbox" className="mt-1" checked={form.automatica} onChange={e => setForm({ ...form, automatica: e.target.checked })} /><span>Confirmar automáticamente al vencer<span className="mt-1 block text-xs text-amber-300">Registrará el importe previsto como movimiento real sin preguntarte. Déjalo desactivado si el pago puede demorarse. Cambiar esta opción afecta a vencimientos futuros.</span></span></label>
+        <button className={button + ' w-full bg-emerald-900'} type="submit">{busy ? 'Guardando…' : 'Guardar regla'}</button>
+      </fieldset></form>}
+      {action && <form onSubmit={execute}><fieldset disabled={busy} className="space-y-4">
+        <p>{'occurrence' in action ? action.occurrence.nombre : action.rule.nombre}</p>
+        {action.kind === 'confirmar' && <><label className="block">Importe real<input autoFocus className={input} type="number" min="0.01" max="9999999999999.99" step="0.01" required value={realAmount} onChange={e => setRealAmount(e.target.value)} /></label><label className="block">Fecha real<input className={input} required type="date" max={civilToday()} value={date} onChange={e => setDate(e.target.value)} /></label><label className="block">Método de pago<input className={input} required maxLength={80} value={method} onChange={e => setMethod(e.target.value)} /></label><p className="text-sm text-zinc-400">Esto creará un movimiento real y cambiará tu saldo. Comprueba que no lo hayas registrado antes por separado.</p></>}
+        {action.kind === 'reprogramar' && <><label className="block">Nueva fecha prevista<input autoFocus className={input} required type="date" max="9999-12-31" value={date} onChange={e => setDate(e.target.value)} /></label><p className="text-sm text-zinc-400">Conserva la fecha original y deja este vencimiento en confirmación manual.</p></>}
+        {action.kind === 'deshacer' && <p className="text-amber-300">Retirará el movimiento del saldo y devolverá este vencimiento a pendiente manual. Se conserva una copia en el historial. Después puedes confirmarlo con los datos correctos.</p>}
+        {action.kind === 'omitir' && <p className="text-zinc-400">No se registrará un movimiento para este vencimiento. La regla seguirá activa.</p>}
+        {action.kind === 'reabrir' && <p className="text-zinc-400">Volverá a pendiente con confirmación manual.</p>}
+        {'rule' in action && <p className="text-zinc-400">{action.kind === 'reactivar' ? 'Reanuda desde hoy sin recuperar las fechas del período pausado.' : action.kind === 'pausar' ? 'Conserva los vencimientos hasta hoy y detiene los nuevos. Los pendientes existentes pasan a confirmación manual.' : 'Detiene nuevos vencimientos y conserva los pendientes en modo manual y el historial. Archivar es definitivo.'}</p>}
+        <button type="submit" className={button + ' w-full bg-emerald-900'}>{busy ? 'Guardando…' : action.kind === 'confirmar' ? 'Confirmar y registrar movimiento' : 'Confirmar cambio'}</button>
+      </fieldset></form>}
+    </section></div>}
+  </div>;
 }
