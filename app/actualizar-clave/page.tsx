@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import AuthPanel, { authInput } from '@/components/AuthPanel';
 import { supabase } from '@/lib/supabase';
-import { validatePassword, verifiedUser } from '@/lib/auth';
+import { updateRecoveryPassword, validatePassword, verifiedUser } from '@/lib/auth';
 
 export default function UpdatePasswordPage() {
   const router = useRouter();
@@ -37,10 +37,11 @@ export default function UpdatePasswordPage() {
       validatePassword(password);
       if (password !== confirmation) throw new Error('Las contraseñas no coinciden.');
       await checkRecovery();
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) throw new Error('No se pudo actualizar la contraseña. Revisa los requisitos o solicita otro enlace.');
+      await updateRecoveryPassword(supabase, password);
       sessionStorage.removeItem('flux-recovery');
-      await supabase.auth.signOut();
+      setReady(false); setPassword(''); setConfirmation('');
+      const { error: logoutError } = await supabase.auth.signOut();
+      if (logoutError) throw new Error('Tu contraseña se actualizó, pero no se pudo cerrar la sesión. Vuelve al acceso para continuar.');
       router.replace('/login?password=updated');
     } catch (error) { setError(error instanceof Error ? error.message : 'No se pudo cambiar la contraseña.'); }
     finally { lock.current = false; setSaving(false); }
@@ -55,5 +56,6 @@ export default function UpdatePasswordPage() {
       <button disabled={saving} className="w-full bg-emerald-400 text-black rounded-xl py-3 font-semibold disabled:opacity-50">{saving ? 'Guardando…' : 'Guardar contraseña'}</button>
     </form>}
     <Link href="/recuperar-clave" className="block text-sm underline">Solicitar otro enlace</Link>
+    <Link href="/login" className="block text-sm underline">Volver al acceso</Link>
   </AuthPanel>;
 }

@@ -2,8 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { accountDestination, authRedirect, completeAuthLink, confirmedSignupDestination, createOwnProfile, initializeMetadataProfile, registerAccount, requestPasswordRecovery, resendSignupConfirmation, validatePassword, validateProfile, verifiedUser } from '../lib/auth.ts';
 import { createClient } from '@supabase/supabase-js';
+import { updateRecoveryPassword } from '../lib/auth.ts';
 
 const profile = { nombre_completo: 'Persona ficticia', username: 'persona', codigo_moneda: 'COP', url_avatar: null };
+
+test('guardar contraseña distingue reutilización, debilidad y sesión vencida', async () => {
+  for (const [error, expected] of [
+    [{ code: 'same_password' }, /diferente/], [{ code: 'weak_password' }, /política/],
+    [{ status: 401 }, /sesión/], [{ code: 'session_expired' }, /sesión/],
+    [{ status: 429 }, /límite/], [{ code: 'unexpected_failure', message: 'sensitive text' }, /unexpected_failure/],
+  ]) {
+    const client = { auth: { async updateUser() { return { error }; } } };
+    await assert.rejects(updateRecoveryPassword(client, 'ClaveFicticia123!'), expected);
+  }
+});
+
+test('guardar contraseña valida antes de enviar y solo actualiza la contraseña', async () => {
+  const calls = [];
+  const client = { auth: { async updateUser(input) { calls.push(input); return { error: null }; } } };
+  await assert.rejects(updateRecoveryPassword(client, 'corta'), /8/);
+  assert.equal(calls.length, 0);
+  await updateRecoveryPassword(client, 'ClaveFicticia123!');
+  assert.deepEqual(calls, [{ password: 'ClaveFicticia123!' }]);
+});
 function clientFor(options = {}) {
   const calls = [];
   let existing = options.existing ?? false;

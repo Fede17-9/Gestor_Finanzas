@@ -134,6 +134,22 @@ export async function confirmedSignupDestination(client: SupabaseClient, email: 
   return await hasProfile(client, user.id) ? '/dashboard' : '/completar-perfil';
 }
 
+export async function updateRecoveryPassword(client: SupabaseClient, password: string): Promise<void> {
+  validatePassword(password);
+  const { error } = await client.auth.updateUser({ password });
+  if (!error) return;
+  if (error.code === 'same_password') throw new Error('La contraseña nueva debe ser diferente de la anterior. Elige otra e intenta guardar de nuevo.');
+  if (error.code === 'weak_password') throw new Error('La contraseña no cumple la política de seguridad de tu cuenta. Usa una contraseña más larga que combine mayúsculas, minúsculas, números y símbolos.');
+  if (error.status === 401 || ['session_not_found', 'session_expired', 'bad_jwt', 'refresh_token_not_found'].includes(error.code ?? '')) {
+    throw new Error('La sesión de recuperación ya no es válida. Solicita un enlace nuevo y ábrelo en este navegador.');
+  }
+  if (error.code === 'reauthentication_needed' || error.code === 'reauthentication_not_valid') throw new Error('El servicio requiere verificar nuevamente tu identidad. Solicita y abre un enlace de recuperación nuevo.');
+  if (error.status === 429) throw new Error('Se alcanzó el límite de intentos. Espera antes de volver a guardar.');
+  if (error.name === 'AuthRetryableFetchError' || error.status === 0) throw new Error('No se pudo comprobar el cambio por un problema de conexión. Revisa la conexión y prueba iniciar sesión antes de repetirlo.');
+  const reference = error.code && /^[a-z_]+$/.test(error.code) ? error.code : String(error.status ?? 'sin_codigo');
+  throw new Error(`No se pudo guardar la contraseña. Comparte esta referencia para revisar la causa: ${reference}.`);
+}
+
 export async function completeAuthLink(client: SupabaseClient, href: string) {
   const url = new URL(href);
   const hash = new URLSearchParams(url.hash.slice(1));
