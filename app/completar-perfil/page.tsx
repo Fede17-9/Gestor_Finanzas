@@ -45,8 +45,8 @@ export default function CompleteProfilePage() {
     finally { lock.current = false; setSaving(false); }
   }
   return <AuthPanel title="Completa tu perfil">
-    <p className="text-sm text-zinc-400">Tu cuenta está creada. Define cómo aparecerás y la moneda de tu registro personal.</p>
-    {error && <p role="alert" className="text-red-300">{error}</p>}
+    <p className="text-sm text-muted">Tu cuenta está creada. Define cómo aparecerás y la moneda de tu registro personal.</p>
+    {error && <p role="alert" className="text-danger">{error}</p>}
     {ready && <form onSubmit={submit} className="space-y-4">
       <label htmlFor="profile-name" className="block text-sm">Nombre</label>
       <input id="profile-name" required maxLength={120} value={name} onChange={event => setName(event.target.value)} className={authInput} />
@@ -56,7 +56,7 @@ export default function CompleteProfilePage() {
       <select id="profile-currency" value={currency} onChange={event => setCurrency(event.target.value)} className={authInput}>
         <option value="COP">COP — Peso colombiano</option><option value="USD">USD — Dólar</option><option value="EUR">EUR — Euro</option>
       </select>
-      <button disabled={saving} className="w-full bg-emerald-400 text-black rounded-xl py-3 font-semibold disabled:opacity-50">{saving ? 'Guardando…' : 'Guardar perfil'}</button>
+      <button disabled={saving} className="button-primary w-full">{saving ? 'Guardando…' : 'Guardar perfil'}</button>
     </form>}
   </AuthPanel>;
 }

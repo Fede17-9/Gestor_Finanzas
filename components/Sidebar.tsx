@@ -1,89 +1,27 @@
-"use client";
+'use client';
 import Link from 'next/link';
-import { useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import {
-  LayoutDashboard,
-  ArrowLeftRight,
-  Target,
-  Wallet,
-  Calendar,
-  Settings,
-  LogOut,
-  Infinity,
-  Repeat
-} from 'lucide-react';
-
-const menuItems = [
-  { name: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-  { name: 'Movimientos', icon: ArrowLeftRight, href: '/dashboard/movimientos' },
-  { name: 'Calendario', icon: Calendar, href: '/dashboard/calendario' },
-  { name: 'Metas', icon: Target, href: '/dashboard/metas' },
-  { name: 'Presupuestos', icon: Wallet, href: '/dashboard/presupuestos' },
-  { name: 'Recurrencias', icon: Repeat, href: '/dashboard/recurrencias' },
-  { name: 'Configuración', icon: Settings, href: '/dashboard/configuracion' },
+import {useState} from 'react';
+import {usePathname,useRouter} from 'next/navigation';
+import {supabase} from '@/lib/supabase';
+import {LayoutDashboard,ArrowLeftRight,Target,Wallet,CalendarDays,Settings2,LogOut,Repeat2,ShieldCheck} from 'lucide-react';
+const items=[
+  {name:'Resumen',icon:LayoutDashboard,href:'/dashboard'},
+  {name:'Movimientos',icon:ArrowLeftRight,href:'/dashboard/movimientos'},
+  {name:'Presupuestos',icon:Wallet,href:'/dashboard/presupuestos'},
+  {name:'Metas de ahorro',icon:Target,href:'/dashboard/metas'},
+  {name:'Recurrencias',icon:Repeat2,href:'/dashboard/recurrencias'},
+  {name:'Calendario',icon:CalendarDays,href:'/dashboard/calendario'},
+  {name:'Configuración',icon:Settings2,href:'/dashboard/configuracion'},
 ];
-
-export default function Sidebar() {
-  const pathname = usePathname();
-  const router = useRouter();
-  const [logoutError, setLogoutError] = useState('');
-  const [loggingOut, setLoggingOut] = useState(false);
-
-  const handleLogout = async () => {
-    if (loggingOut) return;
-    setLoggingOut(true); setLogoutError('');
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      router.replace('/login');
-    } catch { setLogoutError('No se pudo cerrar la sesión. Intenta de nuevo.'); }
-    finally { setLoggingOut(false); }
-  };
-
-  return (
-    <aside className="w-64 h-screen bg-[#09090b] text-zinc-300 flex flex-col fixed left-0 top-0 z-50 border-r border-zinc-800/50 shadow-2xl">
-      {/* Header del Sidebar */}
-      <div className="p-8 flex items-center gap-3">
-        <Infinity className="text-[#39FF14]" size={36} strokeWidth={2.5} />
-        <span className="text-xl font-black text-white tracking-widest uppercase">
-          Flux
-        </span>
-      </div>
-
-      {/* Navegación */}
-      <nav className="flex-1 px-4 space-y-2 overflow-y-auto mt-4">
-        {menuItems.map((item) => {
-          const isActive = item.href === '/dashboard' ? pathname === '/dashboard' : pathname?.startsWith(item.href);
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-300 ${isActive
-                ? 'bg-[#39FF14]/10 text-[#39FF14] font-semibold border border-[#39FF14]/20 shadow-[0_0_15px_rgba(57,255,20,0.1)]'
-                : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-white'
-                }`}
-            >
-              <item.icon size={20} className={isActive ? 'drop-shadow-[0_0_8px_rgba(57,255,20,0.8)]' : ''} />
-              <span className="tracking-wide text-sm">{item.name}</span>
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Footer / Usuario */}
-      <div className="p-4">
-        <button
-          onClick={handleLogout}
-          disabled={loggingOut}
-          className="flex items-center gap-3 px-4 py-3 w-full text-zinc-500 hover:text-[#ff3939] hover:bg-[#ff3939]/10 rounded-xl transition-all duration-300 group"
-        >
-          <LogOut size={20} className="group-hover:scale-110 transition-transform" />
-          <span className="font-medium text-sm">Cerrar sesión</span>
-        </button>
-        {logoutError && <p role="alert" className="text-xs text-red-300 p-3">{logoutError}</p>}
-      </div>
-    </aside>
-  );
+export default function Sidebar({mobile=false,onNavigate}:{mobile?:boolean;onNavigate?:()=>void}){
+  const pathname=usePathname(),router=useRouter();
+  const [error,setError]=useState(''),[busy,setBusy]=useState(false);
+  async function logout(){if(busy)return;setBusy(true);setError('');try{const {error}=await supabase.auth.signOut();if(error)throw error;onNavigate?.();router.replace('/login');}catch{setError('No se pudo cerrar la sesión. Intenta de nuevo.');}finally{setBusy(false);}}
+  return <aside className={mobile?'app-sidebar mobile-sidebar':'app-sidebar'} aria-label="Menú de Flux">
+    {!mobile&&<Link className="app-brand" href="/dashboard"><span aria-hidden="true">f.</span>flux</Link>}
+    <p className="nav-caption">TU ESPACIO PERSONAL</p><nav className="app-navigation" aria-label="Navegación principal">{items.map(item=><Link key={item.href} href={item.href} onClick={onNavigate} aria-current={pathname===item.href?'page':undefined}><item.icon size={19} strokeWidth={1.7}/><span>{item.name}</span>{pathname===item.href&&<span className="nav-dot"/>}</Link>)}</nav>
+    <div className="sidebar-footer">{!mobile&&<div className="sidebar-note"><ShieldCheck size={19}/><strong>A tu ritmo</strong><p>Un poco de claridad hoy.<br/>Más tranquilidad mañana.</p></div>}
+      <button type="button" className="logout-button" disabled={busy} onClick={()=>void logout()}><LogOut size={18}/>{busy?'Cerrando sesión…':'Cerrar sesión'}</button>{error&&<p role="alert" className="feedback error">{error}</p>}
+    </div>
+  </aside>;
 }

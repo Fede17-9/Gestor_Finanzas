@@ -50,9 +50,9 @@ export default function ProtectedDashboard({ children }: { children: React.React
     return () => { active = false; subscription.unsubscribe(); if (timer) clearTimeout(timer); };
   }, [router]);
 
-  if (error) return <div role="alert" className="min-h-screen bg-black text-red-300 p-8">
+  if (error) return <div role="alert" className="min-h-screen bg-paper text-danger p-8">
     {error}<button onClick={() => window.location.reload()} className="block underline mt-4">Volver a intentar</button>
   </div>;
-  if (!ready) return <div role="status" className="min-h-screen bg-black text-zinc-400 grid place-items-center">Verificando tu sesión…</div>;
+  if (!ready) return <div role="status" className="min-h-screen bg-paper text-muted grid place-items-center">Verificando tu sesión…</div>;
   return children;
 }

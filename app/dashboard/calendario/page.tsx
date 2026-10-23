@@ -56,7 +56,7 @@ export default function CalendarioPage() {
     }
   }, [movimientosReales, recurrencias, currentDate, ocurrencias]);
   if (loadError || computed.error) {
-    return <div role="alert" className="p-6 text-red-300">
+    return <div role="alert" className="p-6 text-danger">
       {loadError || computed.error}
       <button className="block mt-4 underline" onClick={() => window.location.reload()}>Volver a cargar</button>
     </div>;
@@ -72,81 +72,81 @@ export default function CalendarioPage() {
   return (
     <div className="max-w-7xl mx-auto pb-10 animate-in fade-in duration-500 relative">
 
-      <p className="text-sm text-zinc-400 mb-6">
+      <p className="text-sm text-muted mb-6">
         Las previsiones y los pendientes no cambian tu saldo. Al confirmar un vencimiento, aparece su movimiento real una sola vez.
-        Gestiona los vencimientos en <a className="underline text-emerald-300" href="/dashboard/recurrencias">Recurrencias</a>. Los movimientos antiguos sin vínculo permanecen independientes.
+        Gestiona los vencimientos en <a className="underline text-accent" href="/dashboard/recurrencias">Recurrencias</a>. Los movimientos antiguos sin vínculo permanecen independientes.
       </p>
 
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-black text-white tracking-widest uppercase flex items-center gap-3">
-            <CalendarIcon className="text-[#39FF14]" size={30} strokeWidth={2.5} />
+          <h1 className="text-3xl font-semibold text-ink tracking-normal  flex items-center gap-3">
+            <CalendarIcon className="text-accent" size={30} strokeWidth={2.5} />
             Pronóstico
           </h1>
-          <p className="text-zinc-500 font-mono text-[10px] uppercase tracking-widest mt-2 border-l-2 border-[#39FF14] pl-3 py-0.5">
+          <p className="text-muted tabular-nums text-xs  tracking-normal mt-2 border-l-2 border-accent pl-3 py-0.5">
             Movimientos registrados y programación estimada
           </p>
         </div>
 
         {/* Cajas de estimaciones divididas */}
-        <div className="flex bg-[#09090b] border border-zinc-800 rounded-2xl overflow-hidden shadow-[0_0_20px_rgba(57,255,20,0.05)]">
+        <div className="flex bg-surface border border-line rounded-2xl overflow-hidden ">
           {/* Reales (Históricos del Mes) */}
-          <div className="px-5 py-3 flex flex-col justify-center border-r border-zinc-800 bg-zinc-900/50">
-            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">
+          <div className="px-5 py-3 flex flex-col justify-center border-r border-line bg-paper/50">
+            <span className="text-xs text-muted font-bold  tracking-normal mb-1 flex items-center gap-1">
               <CheckCircle2 size={10} /> Registrado
             </span>
             <div className="flex gap-4 mt-0.5">
-              <span className="text-zinc-300 font-black font-mono text-xs">{formatAmount(manualIn, currency)}</span>
-              <span className="text-red-300/80 font-black font-mono text-xs">{formatAmount(manualOut, currency)}</span>
+              <span className="text-muted font-semibold tabular-nums text-xs">{formatAmount(manualIn, currency)}</span>
+              <span className="text-danger font-semibold tabular-nums text-xs">{formatAmount(manualOut, currency)}</span>
             </div>
           </div>
           {/* Proyecciones Futuras */}
           <div className="px-5 py-3 flex flex-col justify-center">
-            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">
-              <Zap size={10} className="text-[#39FF14]" /> Programado (estimación)
+            <span className="text-xs text-muted font-bold  tracking-normal mb-1 flex items-center gap-1">
+              <Zap size={10} className="text-accent" /> Programado (estimación)
             </span>
             <div className="flex gap-4 mt-0.5">
-              <span className="text-[#39FF14] font-black font-mono text-xs">{formatAmount(proyecIn, currency)}</span>
-              <span className="text-[#ff3939] font-black font-mono text-xs">{formatAmount(proyecOut, currency)}</span>
+              <span className="text-accent font-semibold tabular-nums text-xs">{formatAmount(proyecIn, currency)}</span>
+              <span className="text-danger font-semibold tabular-nums text-xs">{formatAmount(proyecOut, currency)}</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* Controles del Mes */}
-      <div className="bg-[#09090b] border border-zinc-800/50 p-4 rounded-t-3xl flex items-center justify-between shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#39FF14]/30 to-transparent"></div>
-        <button onClick={prevMonth} className="p-2 text-zinc-400 hover:text-[#39FF14] hover:bg-[#39FF14]/10 rounded-xl transition-all">
+      <div className="bg-surface border border-line/50 p-4 rounded-t-3xl flex items-center justify-between shadow-sm relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-accent/30 to-transparent"></div>
+        <button onClick={prevMonth} className="p-2 text-muted hover:text-accent hover:bg-accent/10 rounded-xl transition-all">
           <ChevronLeft size={24} />
         </button>
         <div className="flex flex-col items-center">
-          <h2 className="text-xl font-black text-white uppercase tracking-widest">
+          <h2 className="text-xl font-semibold text-ink  tracking-normal">
             {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
           </h2>
-          <span className="text-[10px] font-mono text-zinc-500 tracking-widest">MAPA DEL MES</span>
+          <span className="text-xs tabular-nums text-muted tracking-normal">MAPA DEL MES</span>
         </div>
-        <button onClick={nextMonth} className="p-2 text-zinc-400 hover:text-[#39FF14] hover:bg-[#39FF14]/10 rounded-xl transition-all">
+        <button onClick={nextMonth} className="p-2 text-muted hover:text-accent hover:bg-accent/10 rounded-xl transition-all">
           <ChevronRight size={24} />
         </button>
       </div>
 
       {/* Cuadrícula del Calendario */}
-      <div className="bg-[#09090b]/80 backdrop-blur-sm border-x border-b border-zinc-800/50 rounded-b-3xl shadow-2xl p-6">
+      <div className="calendar-scroll bg-surface border border-line rounded-2xl p-4 sm:p-6">
 
         {loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-20 gap-4 text-[#39FF14]">
+          <div className="flex-1 flex flex-col items-center justify-center p-20 gap-4 text-accent">
             <div className="relative">
               <CalendarIcon size={32} className="animate-spin text-zinc-800" />
-              <div className="absolute inset-0 border-t-2 border-[#39FF14] rounded-full animate-spin" style={{ animationDuration: '1.2s' }}></div>
+              <div className="absolute inset-0 border-t-2 border-accent rounded-full animate-spin" style={{ animationDuration: '1.2s' }}></div>
             </div>
-            <span className="font-mono text-[10px] tracking-widest uppercase animate-pulse">Sincronizando DB...</span>
+            <span className="tabular-nums text-xs tracking-normal  animate-pulse">Cargando tu calendario...</span>
           </div>
         ) : (
-          <>
+          <div className="calendar-grid">
             <div className="grid grid-cols-7 gap-4 mb-4">
               {['DOM', 'LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB'].map(day => (
-                <div key={day} className="text-center font-bold text-[10px] tracking-widest text-zinc-500 uppercase border-b border-zinc-800/50 pb-2">
+                <div key={day} className="text-center font-bold text-xs tracking-normal text-muted  border-b border-line/50 pb-2">
                   {day}
                 </div>
               ))}
@@ -154,7 +154,7 @@ export default function CalendarioPage() {
 
             <div className="grid grid-cols-7 gap-2 sm:gap-4">
               {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-                <div key={`empty-${i}`} className="min-h-[100px] border border-transparent rounded-2xl opacity-20 bg-zinc-900/10"></div>
+                <div key={`empty-${i}`} className="min-h-[100px] border border-transparent rounded-2xl opacity-20 bg-paper/10"></div>
               ))}
 
               {Array.from({ length: daysInMonth }).map((_, i) => {
@@ -163,9 +163,9 @@ export default function CalendarioPage() {
                 const isToday = today.getDate() === dayNum && today.getMonth() === currentDate.getMonth() && today.getFullYear() === currentDate.getFullYear();
 
                 return (
-                  <div key={dayNum} className={`min-h-[110px] flex flex-col p-2 border rounded-2xl transition-all duration-300 hover:border-zinc-500 hover:shadow-[0_0_15px_rgba(255,255,255,0.05)] ${isToday ? 'border-[#39FF14]/50 bg-[#39FF14]/5 ring-1 ring-[#39FF14]/20' : 'border-zinc-800/60 bg-zinc-900/30'
+                  <div key={dayNum} className={`min-h-[110px] flex flex-col p-2 border rounded-2xl transition-all duration-300 hover:border-zinc-500  ${isToday ? 'border-accent/50 bg-accent/5 ring-1 ring-accent/20' : 'border-line/60 bg-paper/30'
                     }`}>
-                    <span className={`text-xs font-mono font-bold mb-2 text-right w-full ${isToday ? 'text-[#39FF14]' : 'text-zinc-600'}`}>
+                    <span className={`text-xs tabular-nums font-bold mb-2 text-right w-full ${isToday ? 'text-accent' : 'text-muted'}`}>
                       {dayNum.toString().padStart(2, '0')}
                     </span>
 
@@ -174,19 +174,19 @@ export default function CalendarioPage() {
                         const sign = movementSign(evt.id_tipo);
                         const isIngreso = sign > 0;
                         return (
-                          <div key={evt.key} className={`w-full px-1.5 py-1.5 rounded-lg bg-zinc-900/80 border text-[9px] font-mono tracking-wider flex justify-between items-center ${isIngreso ? ' border-[#39FF14]/30' : ' border-[#ff3939]/30'
+                          <div key={evt.key} className={`w-full px-1.5 py-1.5 rounded-lg bg-paper/80 border text-xs tabular-nums tracking-wider flex justify-between items-center ${isIngreso ? ' border-accent/30' : ' border-danger/30'
                             }`}>
-                            <span className="truncate flex items-center gap-1 text-zinc-300" title={evt.categorias?.nombre_categoria || 'Desc'}>
+                            <span className="truncate flex items-center gap-1 text-muted" title={evt.categorias?.nombre_categoria || 'Desc'}>
                               {evt.isReal ? (
                                 evt.isAutoDB ?
                                   <Zap size={8} className={isIngreso ? 'text-emerald-500 fill-emerald-500' : 'text-rose-500 fill-rose-500'} />
-                                  : <CheckCircle2 size={8} className="text-zinc-500" />
+                                  : <CheckCircle2 size={8} className="text-muted" />
                               ) : (
-                                <Zap size={8} className={isIngreso ? 'text-[#39FF14] fill-[#39FF14] opacity-50' : 'text-[#ff3939] fill-[#ff3939] opacity-50'} />
+                                <Zap size={8} className={isIngreso ? 'text-accent fill-accent opacity-50' : 'text-danger fill-danger opacity-50'} />
                               )}
                               {evt.categorias?.nombre_categoria?.substring(0, 8) || (evt.isReal ? 'REAL' : 'PROYECTO')}
                             </span>
-                            <span className={`font-black ${isIngreso ? 'text-[#39FF14]' : 'text-[#ff3939]'}`}>
+                            <span className={`font-semibold ${isIngreso ? 'text-accent' : 'text-danger'}`}>
                               {sign > 0 ? '+' : sign < 0 ? '-' : ''}{formatAmount(evt.monto_recurrente, currency)}
                             </span>
                           </div>
@@ -197,10 +197,17 @@ export default function CalendarioPage() {
                 )
               })}
             </div>
-          </>
+          </div>
         )}
 
       </div>
+      {!loading && <section className="mt-6 space-y-3 md:hidden" aria-label="Agenda del mes">
+        <h2 className="text-xl font-semibold">Tu agenda del mes</h2>
+        {Object.values(eventosPorDia).every(events=>events.length===0)&&<p className="panel text-sm text-muted">No hay movimientos ni previsiones este mes.</p>}
+        {Object.entries(eventosPorDia).flatMap(([day,events])=>events.map(event=><article key={event.key} className="panel flex flex-wrap justify-between gap-3">
+          <div><strong className="text-sm">Día {day} · {event.categorias?.nombre_categoria||'Sin categoría'}</strong><p className="mt-1 text-xs text-muted">{event.isReal?'Confirmado':event.key.startsWith('pending:')?'Pendiente':'Previsto'}</p></div><span className="text-sm money-value">{formatAmount(event.monto_recurrente,currency)}</span>
+        </article>))}
+      </section>}
     </div>
   );
 }

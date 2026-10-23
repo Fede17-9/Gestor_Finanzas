@@ -32,14 +32,14 @@ export default function RecoverPasswordPage() {
     }
   }
   return <AuthPanel title="Recuperar contraseña">
-    <p className="text-sm text-zinc-400">Te enviaremos un enlace si existe una cuenta asociada a ese correo. Ábrelo en este mismo navegador.</p>
-    {sent && <p role="status" className="text-emerald-300">Solicitud aceptada. Si existe una cuenta asociada, revisa el correo y la carpeta de spam. Esta respuesta no confirma la entrega del mensaje.</p>}
+    <p className="text-sm text-muted">Te enviaremos un enlace si existe una cuenta asociada a ese correo. Ábrelo en este mismo navegador.</p>
+    {sent && <p role="status" className="text-accent">Solicitud aceptada. Si existe una cuenta asociada, revisa el correo y la carpeta de spam. Esta respuesta no confirma la entrega del mensaje.</p>}
     <form onSubmit={submit} className="space-y-4">
         <label htmlFor="recovery-email" className="block text-sm">Correo electrónico</label>
         <input id="recovery-email" type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} className={authInput} />
-        <button disabled={loading || remaining > 0} className="w-full bg-emerald-400 text-black rounded-xl py-3 font-semibold disabled:opacity-50">{loading ? 'Solicitando…' : remaining > 0 ? `Volver a solicitar en ${remaining} s` : 'Enviar enlace'}</button>
+        <button disabled={loading || remaining > 0} className="button-primary w-full">{loading ? 'Solicitando…' : remaining > 0 ? `Volver a solicitar en ${remaining} s` : 'Enviar enlace'}</button>
     </form>
-    {error && <p role="alert" className="text-red-300">{error}</p>}
+    {error && <p role="alert" className="text-danger">{error}</p>}
     <Link href="/login" className="block text-sm underline">Volver al inicio de sesión</Link>
   </AuthPanel>;
 }

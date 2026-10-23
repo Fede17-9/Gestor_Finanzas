@@ -66,7 +66,7 @@ export default function DashboardPage() {
   }, [allMovs, selectedDate, budgets]);
   const summary = computed.summary;
   if (!loading && (loadError || computed.error || !profile || !summary)) {
-    return <div role="alert" className="text-red-300 p-6 border border-red-400/30 rounded-2xl">
+    return <div role="alert" className="text-danger p-6 border border-danger/30 rounded-2xl">
       {loadError || computed.error || 'No se pudo cargar el perfil.'}
       <button className="block mt-4 underline" onClick={() => window.location.reload()}>Volver a cargar</button>
     </div>;
@@ -83,9 +83,9 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full min-h-[50vh] text-[#39FF14] font-mono tracking-widest animate-pulse gap-4">
+      <div className="flex flex-col items-center justify-center h-full min-h-[50vh] text-accent tabular-nums tracking-normal animate-pulse gap-4">
         <Activity size={40} />
-        <span>SINCRONIZANDO SISTEMA...</span>
+        <span>Cargando tus finanzas...</span>
       </div>
     );
   }
@@ -99,30 +99,30 @@ export default function DashboardPage() {
         avatarUrl={userData.avatarUrl}
       />
       
-      <p className="text-sm text-zinc-400 mb-6">
+      <p className="text-sm text-muted mb-6">
         Tu saldo incluye solo movimientos confirmados. En Recurrencias puedes revisar pendientes, confirmar pagos o cobros y consultar su historial.
       </p>
 
       {/* Cards de Métricas Rápidas conectadas a Supabase */}
-      {computed.alerts.length>0&&<p role="status" className="mb-6 rounded-xl border border-amber-600/40 p-4 text-amber-300">
+      {computed.alerts.length>0&&<p role="status" className="mb-6 rounded-xl border border-amber-600/40 p-4 text-warning">
         {computed.alerts.length} presupuesto(s) alcanzaron su umbral de alerta en {selectedDate.toLocaleDateString('es-CO',{month:'long',year:'numeric'})}.
         {' '}<Link className="underline" href={`/dashboard/presupuestos?mes=${selectedDate.getFullYear()}-${String(selectedDate.getMonth()+1).padStart(2,'0')}`}>Revisar presupuestos</Link>
       </p>}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         {[
-          { title: "INGRESO MENSUAL", amount: formatAmount(stats.ingresoMensual, userData.moneda), icon: TrendingUp, color: "text-[#39FF14]" },
-          { title: "GASTO MENSUAL", amount: formatAmount(stats.gastoMensual, userData.moneda), icon: TrendingDown, color: "text-[#ff3939]" },
-          { title: "BALANCE DEL MES", amount: formatAmount(((summary?.incomeCents ?? 0) - (summary?.expenseCents ?? 0)) / 100, userData.moneda), icon: ArrowLeftRight, color: "text-zinc-300" }
+          { title: "INGRESO MENSUAL", amount: formatAmount(stats.ingresoMensual, userData.moneda), icon: TrendingUp, color: "text-accent" },
+          { title: "GASTO MENSUAL", amount: formatAmount(stats.gastoMensual, userData.moneda), icon: TrendingDown, color: "text-danger" },
+          { title: "BALANCE DEL MES", amount: formatAmount(((summary?.incomeCents ?? 0) - (summary?.expenseCents ?? 0)) / 100, userData.moneda), icon: ArrowLeftRight, color: "text-muted" }
         ].map((stat, i) => (
-          <div key={i} className="bg-[#09090b] p-6 rounded-3xl border border-zinc-800/50 hover:border-zinc-700 transition-colors group relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-1 h-full bg-zinc-800 group-hover:bg-[#39FF14] transition-colors duration-300"></div>
+          <div key={i} className="bg-surface p-6 rounded-3xl border border-line/50 hover:border-line transition-colors group relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 h-full bg-soft group-hover:bg-accent transition-colors duration-300"></div>
             <div className="flex justify-between items-start mb-4 ml-2">
-              <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{stat.title}</span>
-              <div className="p-2 bg-zinc-900 rounded-xl group-hover:bg-zinc-800 transition-colors">
+              <span className="text-xs text-muted font-bold  tracking-normal">{stat.title}</span>
+              <div className="p-2 bg-paper rounded-xl group-hover:bg-soft transition-colors">
                 <stat.icon size={18} className={stat.color} />
               </div>
             </div>
-            <p className={`text-3xl font-black tracking-tight ml-2 ${stat.color}`}>{stat.amount}</p>
+            <p className={`text-3xl font-semibold tracking-tight ml-2 ${stat.color}`}>{stat.amount}</p>
           </div>
         ))}
       </div>
@@ -131,10 +131,10 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* Gráfico principal de Flujo */}
-        <div className="lg:col-span-2 bg-[#09090b] rounded-3xl border border-zinc-800/50 p-8 relative overflow-hidden flex flex-col min-h-[400px] shadow-2xl">
+        <div className="lg:col-span-2 bg-surface rounded-3xl border border-line/50 p-8 relative overflow-hidden flex flex-col min-h-[400px] shadow-sm">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
-              <Activity size={18} className="text-[#39FF14]" />
+            <h2 className="text-sm font-bold text-ink  tracking-normal flex items-center gap-2">
+              <Activity size={18} className="text-accent" />
               Rendimiento Operativo
             </h2>
             
@@ -145,7 +145,7 @@ export default function DashboardPage() {
                 const [y, m] = e.target.value.split('-');
                 setSelectedDate(new Date(parseInt(y), parseInt(m), 1));
               }}
-              className="bg-zinc-900 text-zinc-300 border border-zinc-800 text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-xl outline-none focus:border-[#39FF14] transition-colors"
+              className="bg-paper text-muted border border-line text-xs font-bold  tracking-normal px-4 py-2 rounded-xl outline-none focus:border-accent transition-colors"
             >
               {monthOptions.map(m => {
                 const text = m.getFullYear() === current.getFullYear() && m.getMonth() === current.getMonth() ? "Este Mes" :
@@ -164,49 +164,49 @@ export default function DashboardPage() {
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#39FF14" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#39FF14" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#226c5d" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#226c5d" stopOpacity={0}/>
                   </linearGradient>
                   <linearGradient id="colorEgresos" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ff3939" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#ff3939" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#a44841" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#a44841" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e1e7dc" />
                 <XAxis 
                     dataKey="date" 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'monospace' }}
+                    tick={{ fill: '#71717a', fontSize: 12, fontFamily: 'monospace' }}
                     tickFormatter={(value) => `${value}`}
                     dy={10}
                 />
                 <YAxis 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'monospace' }}
+                    tick={{ fill: '#71717a', fontSize: 12, fontFamily: 'monospace' }}
                     tickFormatter={(value) => Number(value).toLocaleString('es-CO')}
                 />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#09090b', borderColor: '#27272a', borderRadius: '12px', fontFamily: 'monospace', fontSize: '12px' }}
+                  contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e1e7dc', borderRadius: '12px', fontFamily: 'monospace', fontSize: '12px' }}
                   itemStyle={{ fontWeight: 'bold' }}
-                  labelStyle={{ color: '#a1a1aa', marginBottom: '8px' }}
+                  labelStyle={{ color: '#66765e', marginBottom: '8px' }}
                   formatter={value => formatAmount(Number(value), userData.moneda)}
                   labelFormatter={(label) => `Día ${label}`}
                   cursor={{ stroke: '#3f3f46', strokeWidth: 1, strokeDasharray: '4 4' }}
                 />
-                <Area type="monotone" dataKey="Ingresos" stroke="#39FF14" strokeWidth={3} fillOpacity={1} fill="url(#colorIngresos)" activeDot={{ r: 6, fill: '#39FF14', stroke: '#09090b', strokeWidth: 2 }} />
-                <Area type="monotone" dataKey="Egresos" stroke="#ff3939" strokeWidth={3} fillOpacity={1} fill="url(#colorEgresos)" activeDot={{ r: 6, fill: '#ff3939', stroke: '#09090b', strokeWidth: 2 }} />
+                <Area type="monotone" dataKey="Ingresos" stroke="#226c5d" strokeWidth={3} fillOpacity={1} fill="url(#colorIngresos)" activeDot={{ r: 6, fill: '#226c5d', stroke: '#ffffff', strokeWidth: 2 }} />
+                <Area type="monotone" dataKey="Egresos" stroke="#a44841" strokeWidth={3} fillOpacity={1} fill="url(#colorEgresos)" activeDot={{ r: 6, fill: '#a44841', stroke: '#ffffff', strokeWidth: 2 }} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* Panel lateral derecho (Movimientos Recientes Reales) */}
-        <div className="bg-[#09090b] rounded-3xl border border-zinc-800/50 p-6 flex flex-col min-h-[400px] shadow-2xl">
+        <div className="bg-surface rounded-3xl border border-line/50 p-6 flex flex-col min-h-[400px] shadow-sm">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-sm font-bold text-white uppercase tracking-widest">Recientes</h2>
-            <Link href="/dashboard/movimientos" className="text-[#39FF14] hover:bg-[#39FF14]/10 p-2 rounded-xl transition-colors">
+            <h2 className="text-sm font-bold text-ink  tracking-normal">Recientes</h2>
+            <Link href="/dashboard/movimientos" className="text-accent hover:bg-accent/10 p-2 rounded-xl transition-colors">
               <Plus size={20} />
             </Link>
           </div>
@@ -214,14 +214,14 @@ export default function DashboardPage() {
           <div className="flex-1 flex flex-col gap-3">
             {recentMoves.length === 0 ? (
               <div className="flex-1 flex flex-col justify-center items-center text-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-                  <ArrowLeftRight size={24} className="text-zinc-600" />
+                <div className="w-16 h-16 rounded-full bg-paper border border-line flex items-center justify-center">
+                  <ArrowLeftRight size={24} className="text-muted" />
                 </div>
                 <div>
-                  <p className="text-zinc-300 font-medium text-sm">Sin movimientos</p>
-                  <p className="text-zinc-600 text-[10px] mt-1 uppercase tracking-widest">Aún no hay actividad monetaria</p>
+                  <p className="text-muted font-medium text-sm">Sin movimientos</p>
+                  <p className="text-muted text-xs mt-1  tracking-normal">Aún no hay actividad monetaria</p>
                 </div>
-                <Link href="/dashboard/movimientos" className="mt-4 px-6 py-3 bg-[#39FF14] text-black font-bold uppercase tracking-widest text-[11px] rounded-xl hover:bg-[#a3e635] transition-all hover:shadow-[0_0_20px_rgba(57,255,20,0.3)] hover:-translate-y-0.5 inline-block text-center">
+                <Link href="/dashboard/movimientos" className="mt-4 px-6 py-3 bg-accent text-white font-bold  tracking-normal text-xs rounded-xl hover:bg-accent transition-all  hover:-translate-y-0.5 inline-block text-center">
                   Añadir Transacción
                 </Link>
               </div>
@@ -231,14 +231,14 @@ export default function DashboardPage() {
                   const sign = movementSign(mov.id_tipo);
                   const isIngreso = sign > 0;
                   return (
-                    <div key={mov.id_movimiento} className="flex justify-between items-center p-3 rounded-xl bg-zinc-900/50 border border-zinc-800/50 hover:bg-zinc-800/50 transition-colors">
+                    <div key={mov.id_movimiento} className="flex justify-between items-center p-3 rounded-xl bg-paper/50 border border-line/50 hover:bg-soft/50 transition-colors">
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${isIngreso ? 'bg-[#39FF14]/10 text-[#39FF14]' : 'bg-[#ff3939]/10 text-[#ff3939]'}`}>
+                        <div className={`p-2 rounded-lg ${isIngreso ? 'bg-accent/10 text-accent' : 'bg-danger/10 text-danger'}`}>
                           {isIngreso ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-zinc-300">{mov.descripcion_detalle || 'Operación'}</p>
-                          <p className="text-[9px] text-zinc-500 font-mono tracking-widest uppercase mt-0.5">
+                          <p className="text-xs font-bold text-muted">{mov.descripcion_detalle || 'Operación'}</p>
+                          <p className="text-xs text-muted tabular-nums tracking-normal  mt-0.5">
                             {(() => {
                               const [y, m, d] = mov.fecha_operacion.split('T')[0].split('-');
                               return new Date(parseInt(y), parseInt(m) - 1, parseInt(d)).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
@@ -246,7 +246,7 @@ export default function DashboardPage() {
                           </p>
                         </div>
                       </div>
-                      <span className={`text-sm font-black font-mono tracking-tight ${isIngreso ? 'text-[#39FF14]' : 'text-white'}`}>
+                      <span className={`text-sm font-semibold tabular-nums tracking-tight ${isIngreso ? 'text-accent' : 'text-ink'}`}>
                         {sign > 0 ? '+' : sign < 0 ? '-' : ''}{formatAmount(mov.monto_transaccion, userData.moneda)}
                       </span>
                     </div>
@@ -256,7 +256,7 @@ export default function DashboardPage() {
             )}
             
             {recentMoves.length > 0 && (
-              <Link href="/dashboard/movimientos" className="mt-auto pt-4 border-t border-zinc-800/50 text-center block text-[10px] font-bold text-[#39FF14] uppercase tracking-widest hover:text-white transition-colors">
+              <Link href="/dashboard/movimientos" className="mt-auto pt-4 border-t border-line/50 text-center block text-xs font-bold text-accent  tracking-normal hover:text-ink transition-colors">
                 Ver todos los movimientos &rarr;
               </Link>
             )}
@@ -267,9 +267,9 @@ export default function DashboardPage() {
 
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
         <CategoryChart title="Gastos por categoría" data={summary?.expenseCategories ?? []}
-          color="#ff3939" currency={userData.moneda} emptyMessage="Sin gastos en este mes." />
+          color="#a44841" currency={userData.moneda} emptyMessage="Sin gastos en este mes." />
         <CategoryChart title="Ingresos por categoría" data={summary?.incomeCategories ?? []}
-          color="#39FF14" currency={userData.moneda} emptyMessage="Sin ingresos en este mes." />
+          color="#226c5d" currency={userData.moneda} emptyMessage="Sin ingresos en este mes." />
       </div>
     </div>
   );

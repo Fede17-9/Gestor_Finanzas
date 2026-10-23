@@ -11,5 +11,5 @@ export default function Home() {
     const isAuthLink = url.searchParams.has('code') || url.searchParams.has('error') || hash.has('access_token') || hash.has('error');
     router.replace(isAuthLink ? '/auth/callback' + url.search + url.hash : '/login');
   }, [router]);
-  return <main className="min-h-screen bg-black text-zinc-400 grid place-items-center">Abriendo tu registro financiero…</main>;
+  return <main className="min-h-screen bg-paper text-muted grid place-items-center">Abriendo tu registro financiero…</main>;
 }

@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { supabase } from "@/lib/supabase"; 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Infinity } from "lucide-react";
+import AuthPanel from '@/components/AuthPanel';
 import Image from 'next/image';
 import { registerAccount } from '@/lib/auth';
 import SignupConfirmation from '@/components/SignupConfirmation';
@@ -48,90 +48,11 @@ export default function RegistroPage() {
     finally { lock.current = false; setLoading(false); }
   };
 
-  const inputStyles = "w-full border border-zinc-800 px-4 py-3 text-sm text-white bg-zinc-900 rounded-xl focus:outline-none focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] placeholder-zinc-600 transition-all";
-  const labelStyles = "block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1";
-
-  if (confirmationEmail) return <SignupConfirmation email={confirmationEmail} onChangeEmail={() => setConfirmationEmail('')} />;
-
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#000000] p-4 relative overflow-hidden font-sans selection:bg-[#39FF14] selection:text-black py-10">
-      {/* Decorative Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-[#39FF14]/5 rounded-full blur-[150px] pointer-events-none"></div>
-
-      <form onSubmit={handleRegistro} className="flex flex-col gap-6 w-full max-w-md bg-[#09090b]/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-zinc-800/50 relative z-10">
-        
-        {/* Línea decorativa neón */}
-        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#39FF14]/50 to-transparent"></div>
-
-        <div className="flex flex-col items-center gap-3 text-center mb-2">
-          <Infinity className="text-[#39FF14]" size={40} strokeWidth={2.5} />
-          <div>
-            <h1 className="text-2xl font-black text-white tracking-widest uppercase">Alta en Sistema</h1>
-            <p className="text-[10px] uppercase font-semibold tracking-widest text-[#39FF14] mt-1">Configuración Inicial</p>
-          </div>
-        </div>
-        
-        {/* Selector de Avatar */}
-        <div className="flex flex-col items-center mb-2">
-          <label className={labelStyles}>Selecciona Identificador Visual</label>
-          <div className="flex justify-center gap-3 flex-wrap mt-2">
-            {AVATARS.map((url) => (
-              <button
-                key={url}
-                type="button"
-                onClick={() => setAvatar(url)}
-                className={`w-12 h-12 rounded-full overflow-hidden border-2 transition-all duration-300 ${
-                  avatar === url ? "border-[#39FF14] scale-110 shadow-[0_0_15px_rgba(57,255,20,0.5)] opacity-100" : "border-zinc-800 hover:border-zinc-600 opacity-50 hover:opacity-100"
-                }`}
-              >
-                <Image src={url} alt="Avatar option" width={48} height={48} unoptimized className="w-full h-full object-cover bg-zinc-900" />
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className={labelStyles}>Identidad Real (Nombre Completo)</label>
-          <input type="text" value={nombre} maxLength={120} placeholder="Ej: John Doe"
-                 onChange={(e) => setNombre(e.target.value)} className={inputStyles} required />
-        </div>
-        
-        <div>
-          <label className={labelStyles}>Alias Operativo (Apodo)</label>
-          <input type="text" value={username} minLength={3} maxLength={32} placeholder="Ej: Neo"
-                 onChange={(e) => setUsername(e.target.value)} className={inputStyles} required />
-        </div>
-
-        <div>
-          <label className={labelStyles}>Moneda Base</label>
-          <select value={moneda} onChange={(e) => setMoneda(e.target.value)} className={inputStyles}>
-            <option value="USD">USD - Dólar Estadounidense</option>
-            <option value="COP">COP - Peso Colombiano</option>
-            <option value="EUR">EUR - Euro</option>
-          </select>
-        </div>
-
-        <div>
-          <label className={labelStyles}>Correo Seguro</label>
-          <input type="email" value={email} autoComplete="email" placeholder="agente@mail.com"
-                 onChange={(e) => setEmail(e.target.value)} className={inputStyles} required />
-        </div>
-
-        <div>
-          <label className={labelStyles}>Clave Encriptada</label>
-          <input type="password" value={password} autoComplete="new-password" minLength={8} maxLength={128} placeholder="••••••••"
-                 onChange={(e) => setPassword(e.target.value)} className={inputStyles} required />
-        </div>
-
-        <button type="submit" disabled={loading} className="w-full bg-[#39FF14] text-black font-black uppercase tracking-widest text-xs py-4 mt-2 rounded-xl hover:bg-[#a3e635] hover:shadow-[0_0_20px_rgba(57,255,20,0.4)] transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
-          {loading ? "CREANDO PERFIL..." : "REGISTRAR Y SINCRONIZAR"}
-        </button>
-
-        {error && <p role="alert" className="text-red-300 text-sm">{error}</p>}
-        <p className="text-center text-xs font-semibold text-zinc-500 uppercase tracking-widest mt-2">
-          ¿YA TIENES ACCESO? <Link href="/login" className="text-[#39FF14] hover:text-white transition-colors">INICIAR SESIÓN</Link>
-        </p>
-      </form>
-    </div>
-  );
+  if(confirmationEmail)return <SignupConfirmation email={confirmationEmail} onChangeEmail={()=>setConfirmationEmail('')}/>;
+  return <AuthPanel title="Crea tu cuenta"><p className="form-hint">Empieza tu espacio personal de finanzas.</p><form onSubmit={handleRegistro} className="form-stack"><fieldset disabled={loading} className="form-stack">
+    <fieldset><legend className="field-label mb-3">Elige tu avatar</legend><div className="flex flex-wrap justify-center gap-3">{AVATARS.map((url,index)=><button key={url} type="button" onClick={()=>setAvatar(url)} aria-label={`Avatar ${index+1}`} aria-pressed={avatar===url} className={`rounded-full border-2 p-1 ${avatar===url?'border-accent bg-soft':'border-transparent'}`}><Image src={url} alt="" width={40} height={40} unoptimized className="rounded-full"/></button>)}</div></fieldset>
+    <label className="field-label">Nombre completo<input className="field" required maxLength={120} autoComplete="name" value={nombre} onChange={e=>setNombre(e.target.value)}/></label><label className="field-label">Alias<input className="field" required minLength={3} maxLength={32} autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)}/></label>
+    <label className="field-label">Moneda de tu registro<select className="field" value={moneda} onChange={e=>setMoneda(e.target.value)}><option value="COP">COP — Peso colombiano</option><option value="USD">USD — Dólar estadounidense</option><option value="EUR">EUR — Euro</option></select></label>
+    <label className="field-label">Correo electrónico<input className="field" type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)}/></label><label className="field-label">Contraseña<input className="field" type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={password} onChange={e=>setPassword(e.target.value)}/><span className="form-hint">Usa al menos 8 caracteres.</span></label><button className="button-primary w-full" type="submit">{loading?'Creando cuenta…':'Crear cuenta'}</button>
+  </fieldset></form>{error&&<p role="alert" className="feedback error">{error}</p>}<p className="text-sm text-muted">¿Ya tienes cuenta? <Link href="/login" className="text-accent underline">Iniciar sesión</Link></p></AuthPanel>;
 }

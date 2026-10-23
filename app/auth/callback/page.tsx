@@ -29,9 +29,9 @@ export default function AuthCallbackPage() {
     return () => { active = false; };
   }, [router]);
   return <AuthPanel title="Verificar acceso">
-    {error ? <><p role="alert" className="text-red-300">{error}</p>
+    {error ? <><p role="alert" className="text-danger">{error}</p>
       <Link href="/recuperar-clave" className="block underline">Solicitar recuperación</Link>
       <Link href="/login" className="block underline">Volver al inicio de sesión</Link></>
-      : <p role="status" className="text-zinc-400">Verificando el enlace…</p>}
+      : <p role="status" className="text-muted">Verificando el enlace…</p>}
   </AuthPanel>;
 }

@@ -59,16 +59,16 @@ export default function SignupConfirmation({ email, onChangeEmail }: { email: st
   }
 
   return <AuthPanel title="Confirma tu correo">
-    <p className="text-sm text-zinc-300">Revisa el correo de <strong className="break-all">{email}</strong> y la carpeta de spam.</p>
-    <p className="text-sm text-zinc-400">Abre el enlace en este mismo computador, navegador y perfil. Puede abrir otra pestaña. Al confirmar, esta pantalla también comprobará tu acceso.</p>
-    <p className="text-sm text-zinc-400">Si tu cuenta ya estaba confirmada, inicia sesión.</p>
-    {message && <p role="status" className="text-emerald-300 text-sm">{message}</p>}
-    {error && <p role="alert" className="text-red-300 text-sm">{error}</p>}
+    <p className="text-sm text-muted">Revisa el correo de <strong className="break-all">{email}</strong> y la carpeta de spam.</p>
+    <p className="text-sm text-muted">Abre el enlace en este mismo computador, navegador y perfil. Puede abrir otra pestaña. Al confirmar, esta pantalla también comprobará tu acceso.</p>
+    <p className="text-sm text-muted">Si tu cuenta ya estaba confirmada, inicia sesión.</p>
+    {message && <p role="status" className="text-accent text-sm">{message}</p>}
+    {error && <p role="alert" className="text-danger text-sm">{error}</p>}
     <button type="button" onClick={() => void resend()} disabled={loading || remaining > 0}
-      className="w-full bg-emerald-400 text-black rounded-xl py-3 font-semibold disabled:opacity-50">
+      className="button-primary w-full">
       {loading ? 'Solicitando…' : remaining > 0 ? `Reenviar en ${remaining} s` : 'Reenviar confirmación'}
     </button>
-    <p className="text-xs text-zinc-500">Si el servicio de correo alcanzó su límite, puede ser necesario esperar más tiempo.</p>
+    <p className="text-xs text-muted">Si el servicio de correo alcanzó su límite, puede ser necesario esperar más tiempo.</p>
     <button type="button" onClick={onChangeEmail} disabled={loading} className="block text-sm underline disabled:opacity-50">Usar otro correo</button>
     <Link href="/login" className="block text-sm underline">Iniciar sesión</Link>
   </AuthPanel>;
