@@ -1,5 +1,6 @@
 import type { User } from '@supabase/supabase-js';
 import type { AppSupabaseClient } from './supabase.ts';
+import { isProfileAvatar } from './profile-avatars.ts';
 
 export interface ProfileInput {
   nombre_completo: string;
@@ -14,7 +15,7 @@ export function validateProfile(input: ProfileInput): ProfileInput {
   if (!nombre || nombre.length > 120) throw new Error('Escribe tu nombre, con un máximo de 120 caracteres.');
   if (username.length < 3 || username.length > 32) throw new Error('El alias debe tener entre 3 y 32 caracteres.');
   if (!['COP','USD','EUR'].includes(input.codigo_moneda)) throw new Error('Selecciona una moneda válida.');
-  if (input.url_avatar && !/^https:\/\/api\.dicebear\.com\/9\.x\/fun-emoji\/svg\?seed=[A-Za-z]+$/.test(input.url_avatar)) {
+  if (input.url_avatar && !isProfileAvatar(input.url_avatar) && !/^https:\/\/api\.dicebear\.com\/9\.x\/fun-emoji\/svg\?seed=[A-Za-z]+$/.test(input.url_avatar)) {
     throw new Error('Selecciona uno de los avatares disponibles.');
   }
   return { nombre_completo: nombre, username, codigo_moneda: input.codigo_moneda, url_avatar: input.url_avatar };

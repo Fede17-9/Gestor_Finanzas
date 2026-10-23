@@ -3,8 +3,41 @@ import assert from 'node:assert/strict';
 import { accountDestination, authRedirect, completeAuthLink, confirmedSignupDestination, createOwnProfile, initializeMetadataProfile, registerAccount, requestPasswordRecovery, resendSignupConfirmation, validatePassword, validateProfile, verifiedUser } from '../lib/auth.ts';
 import { createClient } from '@supabase/supabase-js';
 import { updateRecoveryPassword } from '../lib/auth.ts';
+import { PROFILE_AVATARS, DEFAULT_PROFILE_AVATAR, profileAvatarSource } from '../lib/profile-avatars.ts';
+import { readFile } from 'node:fs/promises';
 
 const profile = { nombre_completo: 'Persona ficticia', username: 'persona', codigo_moneda: 'COP', url_avatar: null };
+
+test('registro conserva el icono local elegido hasta completar el perfil tras confirmar el correo', async () => {
+  for (const avatar of PROFILE_AVATARS) {
+    const input = { ...profile, url_avatar: avatar.src };
+    const registering = clientFor({ metadata: input });
+    await registerAccount(registering, 'persona@example.test', 'UnaClave123', input, 'http://localhost:3000');
+    assert.equal(registering.calls.find(([operation]) => operation === 'signUp')[1].options.data.url_avatar, avatar.src);
+    const confirming = clientFor({ metadata: input });
+    assert.equal(await initializeMetadataProfile(confirming), '/dashboard');
+    assert.equal(confirming.calls.find(([operation]) => operation === 'insert')[1].url_avatar, avatar.src);
+    const svg = await readFile(new URL(`../public${avatar.src}`, import.meta.url), 'utf8');
+    assert.match(svg, /^<svg /);
+  }
+});
+
+test('perfiles antiguos se pueden completar y se muestran con un icono local sin sobrescribirlos', async () => {
+  const legacy = 'https://api.dicebear.com/9.x/fun-emoji/svg?seed=Felix';
+  const client = clientFor({ metadata: { ...profile, url_avatar: legacy } });
+  assert.equal(await initializeMetadataProfile(client), '/dashboard');
+  assert.equal(client.calls.find(([operation]) => operation === 'insert')[1].url_avatar, legacy);
+  for (const value of [legacy, null, undefined, 'https://untrusted.invalid/avatar.svg']) {
+    assert.equal(profileAvatarSource(value), DEFAULT_PROFILE_AVATAR);
+  }
+  assert.equal(profileAvatarSource(PROFILE_AVATARS[3].src), PROFILE_AVATARS[3].src);
+});
+
+test('el perfil rechaza rutas de imagen ajenas al selector y URLs manipuladas', () => {
+  for (const url_avatar of ['/avatars/otra.svg', '/avatars/../persona.svg', '//untrusted.invalid/persona.svg', '/avatars/persona.svg?next=otro', '/avatars/%70ersona.svg', 'data:image/svg+xml,test', 'https://api.dicebear.com/9.x/fun-emoji/svg?seed=Felix&extra=1']) {
+    assert.throws(() => validateProfile({ ...profile, url_avatar }), /avatares/);
+  }
+});
 
 test('guardar contraseña distingue reutilización, debilidad y sesión vencida', async () => {
   for (const [error, expected] of [

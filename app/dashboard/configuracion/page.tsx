@@ -1,23 +1,15 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import Image from 'next/image';
+import ProfileAvatar from '@/components/ProfileAvatar';
+import ProfileAvatarPicker from '@/components/ProfileAvatarPicker';
+import { DEFAULT_PROFILE_AVATAR, profileAvatarSource } from '@/lib/profile-avatars';
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import {
   Settings, User, Wallet, ImageIcon, ShieldCheck,
   Save, CheckCircle2, AlertCircle, Loader2
 } from "lucide-react";
-
-// ─── Avatares (mismos que en /registro) ──────────────────────────────────────
-const AVATARS = [
-  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Felix",
-  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Aneka",
-  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Molly",
-  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Oliver",
-  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Jack",
-  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Sadie",
-];
 
 const MONEDAS = ["USD", "COP", "EUR"] as const;
 type Moneda = (typeof MONEDAS)[number];
@@ -56,7 +48,7 @@ export default function ConfiguracionPage() {
   const [nombre, setNombre]     = useState("");
   const [username, setUsername] = useState("");
   const [moneda, setMoneda]     = useState<Moneda>("USD");
-  const [avatar, setAvatar]     = useState(AVATARS[0]);
+  const [avatar, setAvatar]     = useState<string>(DEFAULT_PROFILE_AVATAR);
 
   // ── Toasts ──────────────────────────────────────────────────────────────────
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -94,7 +86,7 @@ export default function ConfiguracionPage() {
         setNombre(perfil.nombre_completo ?? "");
         setUsername(perfil.username ?? "");
         setMoneda(profileCurrency);
-        setAvatar(perfil.url_avatar ?? AVATARS[0]);
+        setAvatar(profileAvatarSource(perfil.url_avatar));
         setFechaRegistro(perfil.fecha_registro ?? null);
       }
       setLoading(false);
@@ -247,14 +239,16 @@ export default function ConfiguracionPage() {
               id="settings-currency"
               value={moneda}
               disabled
+              aria-describedby="settings-currency-help"
               className={inputCls}
             >
               <option value="USD">USD — Dólar Estadounidense</option>
               <option value="COP">COP — Peso Colombiano</option>
               <option value="EUR">EUR — Euro</option>
             </select>
-            <p className="text-xs text-muted mt-3">
-              La moneda se elige al registrarte. Cambiarla no convierte los importes del historial.
+            <p id="settings-currency-help" className="text-xs text-muted mt-3">
+              Tu historial está registrado en {moneda}. La moneda base se elige al crear la cuenta
+              y permanece fija: cambiar solo el símbolo no convierte el dinero ni los importes anteriores.
             </p>
           </div>
         </section>
@@ -266,45 +260,21 @@ export default function ConfiguracionPage() {
           <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
           <div className="flex items-center gap-2 mb-6">
             <ImageIcon size={16} className="text-accent" />
-            <h2 className="text-sm font-semibold text-ink  tracking-normal">Identificador visual</h2>
+            <h2 className="text-sm font-semibold text-ink  tracking-normal">Imagen de perfil</h2>
           </div>
 
           {/* Preview del avatar actual */}
           <div className="flex items-center gap-4 mb-6">
-            <Image
-              src={avatar}
-              alt="Avatar actual"
-              width={64}
-              height={64}
-              unoptimized
-              className="w-16 h-16 rounded-full border-2 border-accent  bg-paper object-cover"
-            />
+            <ProfileAvatar value={avatar} size={64} />
             <div>
               <p className="text-ink text-sm font-bold">{username || "Tu alias"}</p>
-              <p className="text-xs text-accent tabular-nums  tracking-normal mt-0.5">Avatar activo</p>
+              <p className="text-xs text-accent tracking-normal mt-0.5">Vista previa</p>
             </div>
           </div>
 
           {/* Selector de avatares */}
-          <label className={labelCls}>Selecciona un avatar</label>
-          <div className="flex gap-3 flex-wrap mt-2">
-            {AVATARS.map((url,index) => (
-              <button
-                key={url}
-                aria-label={`Avatar ${index+1}`}
-                aria-pressed={avatar===url}
-                type="button"
-                onClick={() => setAvatar(url)}
-                className={`w-14 h-14 rounded-full overflow-hidden border-2 transition-all duration-300 ${
-                  avatar === url
-                    ? "border-accent scale-110  opacity-100"
-                    : "border-line hover:border-line opacity-50 hover:opacity-100"
-                }`}
-              >
-                <Image src={url} alt="Avatar opción" width={56} height={56} unoptimized className="w-full h-full object-cover bg-paper" />
-              </button>
-            ))}
-          </div>
+          <ProfileAvatarPicker value={avatar} onChange={setAvatar} />
+          <p className="text-xs text-muted mt-3">Elige un icono y pulsa Guardar cambios para aplicarlo a tu perfil.</p>
         </section>
 
         {/* ══════════════════════════════════════
