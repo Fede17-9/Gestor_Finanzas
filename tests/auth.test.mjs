@@ -60,10 +60,12 @@ test('guardar contraseña valida antes de enviar y solo actualiza la contraseña
 });
 function clientFor(options = {}) {
   const calls = [];
+  const savedProfiles = [];
   let existing = options.existing ?? false;
   const user = { id: 'verified-user', email: options.email ?? 'persona@example.test', email_confirmed_at: options.unconfirmed ? null : '2026-10-22T12:00:00Z', user_metadata: options.metadata ?? profile };
   return {
     calls,
+    savedProfiles,
     auth: {
       async getUser() { calls.push(['getUser']); return { data: { user: options.anonymous ? null : user }, error: options.authError ?? null }; },
       async signUp(input) { calls.push(['signUp', input]); return { data: { user, session: options.confirmed ? { user } : null }, error: null }; },
@@ -84,7 +86,9 @@ function clientFor(options = {}) {
         async insert(value) {
           calls.push(['insert', value]);
           if (options.insertError) return { error: options.insertError };
+          if (existing) return { error: { code: '23505' } };
           existing = true;
+          savedProfiles.push(value);
           return { error: null };
         },
       };
@@ -164,12 +168,42 @@ test('reenvío informa límites y rechazos sin anunciar un correo enviado', asyn
 
 test('pestaña de registro solo continúa para la misma cuenta verificada, incluyendo perfil pendiente', async () => {
   assert.equal(await confirmedSignupDestination(clientFor({ existing: true }), ' PERSONA@example.test '), '/dashboard');
-  assert.equal(await confirmedSignupDestination(clientFor(), 'persona@example.test'), '/completar-perfil');
+  assert.equal(await confirmedSignupDestination(clientFor(), 'persona@example.test'), '/dashboard');
+  assert.equal(await confirmedSignupDestination(clientFor({ metadata: {} }), 'persona@example.test'), '/completar-perfil');
+  assert.equal(await confirmedSignupDestination(clientFor({ insertError: { code: '23505' } }), 'persona@example.test'), '/completar-perfil');
   for (const options of [{ anonymous: true }, { unconfirmed: true }, { email: 'otra@example.test' }]) {
     const client = clientFor(options);
     assert.equal(await confirmedSignupDestination(client, 'persona@example.test'), null);
     assert.equal(client.calls.some(([operation]) => operation === 'owner'), false);
   }
+});
+
+test('las dos pestañas de confirmación conservan Portafolio aunque la original llegue primero o actúen a la vez', async () => {
+  const metadata = { ...profile, url_avatar: '/avatars/portafolio.svg' };
+  const callback = client => completeAuthLink(client, 'http://localhost:3000/auth/callback?code=valid');
+  const original = client => confirmedSignupDestination(client, 'persona@example.test');
+  for (const order of ['original', 'callback', 'concurrent']) {
+    const client = clientFor({ metadata });
+    if (order === 'concurrent') {
+      const [destination, result] = await Promise.all([original(client), callback(client)]);
+      assert.equal(destination, '/dashboard');
+      assert.equal(result.destination, '/dashboard');
+    } else if (order === 'original') {
+      assert.equal(await original(client), '/dashboard');
+      assert.equal((await callback(client)).destination, '/dashboard');
+    } else {
+      assert.equal((await callback(client)).destination, '/dashboard');
+      assert.equal(await original(client), '/dashboard');
+    }
+    assert.equal(client.savedProfiles.length, 1);
+    assert.equal(client.savedProfiles[0].url_avatar, metadata.url_avatar);
+  }
+});
+
+test('confirmar desde la pestaña original no reemplaza un icono guardado por metadata antigua', async () => {
+  const client = clientFor({ existing: true, metadata: { ...profile, url_avatar: '/avatars/portafolio.svg' } });
+  assert.equal(await confirmedSignupDestination(client, 'persona@example.test'), '/dashboard');
+  assert.equal(client.calls.some(([operation]) => operation === 'insert'), false);
 });
 
 test('cliente Supabase real: reenvío emite POST resend con callback, sin tráfico externo', async () => {

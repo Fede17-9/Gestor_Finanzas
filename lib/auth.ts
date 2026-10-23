@@ -133,7 +133,9 @@ export async function requestPasswordRecovery(client: AppSupabaseClient, email: 
 export async function confirmedSignupDestination(client: AppSupabaseClient, email: string): Promise<string | null> {
   const user = await verifiedUser(client);
   if (!user?.email_confirmed_at || user.email?.trim().toLowerCase() !== email.trim().toLowerCase()) return null;
-  return await hasProfile(client, user.id) ? '/dashboard' : '/completar-perfil';
+  // Either signup tab may observe the confirmed session first. Both complete the
+  // same draft safely instead of sending one tab to a form with missing choices.
+  return initializeMetadataProfile(client);
 }
 
 export async function updateRecoveryPassword(client: AppSupabaseClient, password: string): Promise<void> {
