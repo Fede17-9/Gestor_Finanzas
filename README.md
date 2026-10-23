@@ -66,6 +66,8 @@ Importa este repositorio como proyecto Next.js. **Root Directory: `./`**, porque
 
 En Supabase, configura Site URL y las redirecciones de confirmación/recuperación para el dominio definitivo, conservando localhost para desarrollo. Revisa el servicio de correo, las cuotas y la protección contra abuso antes de abrir el registro. Las previews que necesiten probar datos deben utilizar un entorno de prueba, separado de la información personal.
 
+`vercel.json` limita los despliegues automáticos a `main`. Las ramas de trabajo se validan en GitHub Actions; las variables del Supabase personal se configuran solo en Production. Cuando exista una base de pruebas separada, se podrá habilitar su despliegue de preview explícitamente.
+
 La publicación del código no publica la base de datos. Las migraciones se aplican por separado y con respaldo; fusionar una rama no modifica Supabase.
 
 ## Recursos y licencia
