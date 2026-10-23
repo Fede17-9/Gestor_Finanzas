@@ -9,7 +9,7 @@ import {
   Settings2, ShieldCheck, ShoppingBasket, SlidersHorizontal, Sparkles,
   Target, Trash2, TriangleAlert, Wallet, X,
 } from 'lucide-react';
-import { amountToCents, centsToDecimal, civilToday } from '@/lib/finance';
+import { amountToCents, centsToDecimal } from '@/lib/finance';
 import styles from './BudgetPreview.module.css';
 
 type Budget = { id: string; category: string; limit: number; alert: number; period: string };
@@ -62,8 +62,7 @@ function Dialog({ title, description, children, onClose, danger = false }: {
   </dialog>;
 }
 
-export default function BudgetPreview() {
-  const [initialPeriod] = useState(() => civilToday().slice(0, 7));
+export default function BudgetPreview({ initialPeriod }: { initialPeriod: string }) {
   const [period, setPeriod] = useState(initialPeriod);
   const [budgets, setBudgets] = useState<Budget[]>(() => [
     { id: 'general', category: 'general', limit: 250000000, alert: 80, period: initialPeriod },

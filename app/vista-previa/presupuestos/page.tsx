@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import BudgetPreview from '@/components/budget-preview/BudgetPreview';
+import { civilToday } from '@/lib/finance';
 
 export const metadata: Metadata = {
   title: 'Flux · Propuesta de Presupuestos',
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function BudgetPreviewPage() {
-  return <BudgetPreview />;
+  return <BudgetPreview initialPeriod={civilToday().slice(0, 7)} />;
 }
