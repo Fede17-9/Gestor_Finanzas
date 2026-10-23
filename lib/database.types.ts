@@ -5,6 +5,64 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      "aportes_metas": {
+        Row: {
+          "id_aporte": string;
+          "id_meta": string;
+          "id_usuario": string;
+          "monto": number;
+          "tipo": string;
+          "fecha": string;
+          "concepto": string;
+          "id_origen": string | null;
+          "creado_en": string;
+        };
+        Insert: {
+          "id_aporte"?: string;
+          "id_meta": string;
+          "id_usuario": string;
+          "monto": number | DecimalString;
+          "tipo": string;
+          "fecha": string;
+          "concepto": string;
+          "id_origen"?: string | null;
+          "creado_en"?: string;
+        };
+        Update: {
+          "id_aporte"?: string;
+          "id_meta"?: string;
+          "id_usuario"?: string;
+          "monto"?: number | DecimalString;
+          "tipo"?: string;
+          "fecha"?: string;
+          "concepto"?: string;
+          "id_origen"?: string | null;
+          "creado_en"?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "aportes_metas_id_meta_fkey";
+            columns: ["id_meta"];
+            isOneToOne: false;
+            referencedRelation: "metas_ahorro";
+            referencedColumns: ["id_meta"];
+          },
+          {
+            foreignKeyName: "aportes_metas_id_origen_fkey";
+            columns: ["id_origen"];
+            isOneToOne: true;
+            referencedRelation: "aportes_metas";
+            referencedColumns: ["id_aporte"];
+          },
+          {
+            foreignKeyName: "aportes_metas_id_usuario_fkey";
+            columns: ["id_usuario"];
+            isOneToOne: false;
+            referencedRelation: "usuarios";
+            referencedColumns: ["id_usuario"];
+          },
+        ];
+      };
       "categorias": {
         Row: {
           "id_categoria": string;
@@ -172,6 +230,7 @@ export type Database = {
           "fecha_proyectada": string | null;
           "prioridad_nivel": string | null;
           "estado_meta": string | null;
+          "archivada": boolean;
         };
         Insert: {
           "id_meta"?: string;
@@ -182,6 +241,7 @@ export type Database = {
           "fecha_proyectada"?: string | null;
           "prioridad_nivel"?: string | null;
           "estado_meta"?: string | null;
+          "archivada"?: boolean;
         };
         Update: {
           "id_meta"?: string;
@@ -192,6 +252,7 @@ export type Database = {
           "fecha_proyectada"?: string | null;
           "prioridad_nivel"?: string | null;
           "estado_meta"?: string | null;
+          "archivada"?: boolean;
         };
         Relationships: [
           {
@@ -447,6 +508,13 @@ export type Database = {
         Args: Record<PropertyKey, never>;
         Returns: number;
       };
+      "archivar_meta": {
+        Args: {
+          "p_id": string | null;
+          "p_archivada": boolean | null;
+        };
+        Returns: undefined;
+      };
       "cambiar_ocurrencia": {
         Args: {
           "p_id": string | null;
@@ -471,6 +539,28 @@ export type Database = {
         };
         Returns: string;
       };
+      "guardar_meta": {
+        Args: {
+          "p_id": string | null;
+          "p_nombre": string | null;
+          "p_objetivo": number | DecimalString | null;
+          "p_inicial": number | DecimalString | null;
+          "p_fecha": string | null;
+          "p_prioridad": string | null;
+        };
+        Returns: string;
+      };
+      "guardar_presupuesto": {
+        Args: {
+          "p_id": string | null;
+          "p_categoria": string | null;
+          "p_monto": number | DecimalString | null;
+          "p_mes": number | null;
+          "p_anio": number | null;
+          "p_alerta": number | null;
+        };
+        Returns: string;
+      };
       "guardar_recurrencia": {
         Args: {
           "p_id": string | null;
@@ -489,6 +579,23 @@ export type Database = {
       "procesar_recurrencias": {
         Args: Record<PropertyKey, never>;
         Returns: number;
+      };
+      "registrar_aporte_meta": {
+        Args: {
+          "p_id": string | null;
+          "p_meta": string | null;
+          "p_monto": number | DecimalString | null;
+          "p_tipo": string | null;
+          "p_fecha": string | null;
+          "p_concepto": string | null;
+        };
+        Returns: string;
+      };
+      "revertir_aporte_meta": {
+        Args: {
+          "p_id": string | null;
+        };
+        Returns: string;
       };
     };
     Enums: { [_ in never]: never };

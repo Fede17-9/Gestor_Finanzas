@@ -25,6 +25,10 @@ export async function checkQueryContract(client: AppSupabaseClient) {
   client.rpc('confirmar_ocurrencia', { p_id: 'occurrence', p_monto: 'incorrecto', p_fecha: '2026-10-22', p_metodo: 'Efectivo' });
   client.rpc('confirmar_ocurrencia', { p_id: 'occurrence', p_monto: centsToDecimal(123), p_fecha: '2026-10-22', p_metodo: 'Efectivo' });
   client.rpc('actualizar_pendientes');
+  // @ts-expect-error A savings entry requires a date, kind and description.
+  client.rpc('registrar_aporte_meta', { p_id: 'request', p_meta: 'goal', p_monto: 10 });
+  // @ts-expect-error Budget alert percentages are numeric.
+  client.rpc('guardar_presupuesto', { p_id: null, p_categoria: null, p_monto: '10.00', p_mes: 10, p_anio: 2026, p_alerta: 'ochenta' });
 
   client.from('movimientos').insert({
     id_usuario: 'owner', id_tipo: 2, monto_transaccion: centsToDecimal(123),
