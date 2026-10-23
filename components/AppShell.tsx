@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Menu, ShieldCheck } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Dialog from './ui/Dialog';
+import SiteFooter from './SiteFooter';
 const names: Record<string, string> = { dashboard: 'Resumen', movimientos: 'Movimientos', presupuestos: 'Presupuestos', metas: 'Metas de ahorro', recurrencias: 'Recurrencias', calendario: 'Calendario', configuracion: 'Configuración' };
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname(), [menu, setMenu] = useState(false);
@@ -16,7 +17,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <Link href="/dashboard">Mi espacio</Link><span aria-hidden="true">/</span><strong>{names[pathname.split('/').at(-1) || 'dashboard'] || 'Flux'}</strong>
     </div><span className="privacy-label"><ShieldCheck size={16} />Finanzas personales</span></header>
       <main id="main-content" tabIndex={-1} className="app-main">{children}</main>
-      <footer className="app-footer"><span>Con claridad, un mes a la vez.</span><Link href="/creditos">Créditos de recursos</Link></footer>
+      <SiteFooter />
     </div>
     {menu && <Dialog title="Tu espacio" description="Organiza tus finanzas, a tu ritmo." onClose={() => setMenu(false)}><Sidebar mobile onNavigate={() => setMenu(false)} /></Dialog>}
   </div>;

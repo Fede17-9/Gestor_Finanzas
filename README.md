@@ -4,11 +4,13 @@ Aplicación personal para registrar ingresos y gastos, planificar recurrencias, 
 
 Cada cuenta mantiene sus datos privados. La interfaz está en español y usa una presentación clara, sobria y adaptable a móvil.
 
+**Beta publicada:** [gestor-finanzas-green.vercel.app](https://gestor-finanzas-green.vercel.app/login). Para evaluar el proyecto, utiliza información ficticia en tu propia cuenta.
+
 ## Estado
 
 Las fases de integridad, autenticación y seguridad, recurrencias, presupuestos/metas y diseño están implementadas. El propietario probó los flujos principales contra su Supabase, incluidos confirmación de correo, recuperación de contraseña, aislamiento entre cuentas y procesamiento programado.
 
-El proyecto está preparando su beta de portafolio. El destino acordado es Vercel Hobby para la web y Supabase para autenticación y base de datos. La configuración pública, los textos de privacidad, la autorización de tratamiento y la atención de solicitudes de usuarios siguen pendientes antes de abrir el registro a evaluadores.
+La beta está desplegada en Vercel Hobby y utiliza Supabase para autenticación y base de datos. El propietario verificó la recuperación de contraseña y el acceso en el dominio publicado. Los textos de privacidad, la autorización de tratamiento, la atención de solicitudes de usuarios y la preparación del correo para nuevos destinatarios siguen pendientes antes de ampliar la beta a evaluadores.
 
 - Los saldos cuentan movimientos confirmados. Los pendientes y previsiones no registran pagos.
 - Cada regla recurrente admite confirmación manual o automática. Supabase Cron procesa las automáticas cuando la web está cerrada.
@@ -63,6 +65,8 @@ El esquema reproducible, las migraciones y el procesamiento programado están en
 Importa este repositorio como proyecto Next.js. **Root Directory: `./`**, porque `package.json` está en la raíz del repositorio; rama de producción: `main`. Configura las variables de Supabase en Vercel y vuelve a desplegar si cambian.
 
 En Supabase, configura Site URL y las redirecciones de confirmación/recuperación para el dominio definitivo, conservando localhost para desarrollo. Revisa el servicio de correo, las cuotas y la protección contra abuso antes de abrir el registro. Las previews que necesiten probar datos deben utilizar un entorno de prueba, separado de la información personal.
+
+`vercel.json` limita los despliegues automáticos a `main`. Las ramas de trabajo se validan en GitHub Actions; las variables del Supabase personal se configuran solo en Production. Cuando exista una base de pruebas separada, se podrá habilitar su despliegue de preview explícitamente.
 
 La publicación del código no publica la base de datos. Las migraciones se aplican por separado y con respaldo; fusionar una rama no modifica Supabase.
 
