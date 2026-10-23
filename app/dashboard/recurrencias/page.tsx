@@ -136,9 +136,9 @@ export default function RecurrenciasPage() {
   const overdue = pending.filter(o => occurrenceStatus(o) === 'vencida');
 
   return <div className="mx-auto max-w-6xl space-y-6 pb-12 text-ink">
-    <header className="flex flex-wrap items-center justify-between gap-4">
+    <header className="page-heading">
       <div><h1 className="flex items-center gap-3 text-3xl font-bold"><Repeat className="text-accent" />Recurrencias</h1><p className="mt-2 text-sm text-muted">Planifica tus pagos y cobros. Confirma lo que ocurrió y deja pendiente lo que se demore.</p></div>
-      <button className={button} disabled={busy || loading || !!loadError} onClick={() => edit()}><Plus className="mr-2 inline" size={16} />Nueva regla</button>
+      <button className="button-primary" disabled={busy || loading || !!loadError} onClick={() => edit()}><Plus size={18} />Nueva regla</button>
     </header>
     <p className="rounded-xl border border-line p-4 text-sm text-muted">Las reglas nuevas empiezan hoy o en el futuro. Actualizar pendientes prepara vencimientos hasta hoy, sin confirmar pagos. El modo automático por regla requiere activar la tarea programada en Supabase; funciona con la aplicación cerrada una vez configurada.</p>
     {loadError && <div role="alert" className="rounded-xl border border-red-800 p-4 text-danger">{loadError}</div>}

@@ -1,5 +1,6 @@
 'use client';
 import {useState} from 'react';
+import {Plus} from 'lucide-react';
 import Dialog from '@/components/ui/Dialog';
 import ConfirmModal from '@/components/ConfirmModal';
 import {supabase} from '@/lib/supabase';
@@ -38,7 +39,7 @@ export default function MetasPage(){
   const reversed=new Set(data?.entries.map(a=>a.id_origen).filter(Boolean));
   const currency=data?.profile.codigo_moneda||'COP';
   return <div className="mx-auto max-w-5xl space-y-6 pb-12 text-ink">
-    <header className="flex flex-wrap justify-between gap-3"><div><h1 className="text-3xl font-bold">Metas de ahorro</h1><p className="mt-2 text-muted">Reserva dinero para tus objetivos y conserva el historial de cada aporte.</p></div><button className={button} disabled={!data||busy} onClick={()=>open()}>Nueva meta</button></header>
+    <header className="page-heading"><div><h1 className="text-3xl font-bold">Metas de ahorro</h1><p className="mt-2 text-muted">Reserva dinero para tus objetivos y conserva el historial de cada aporte.</p></div><button className="button-primary" disabled={!data||busy} onClick={()=>open()}><Plus size={18}/>Nueva meta</button></header>
     <p className="rounded-xl border border-line p-4 text-sm text-muted">Un aporte aumenta lo reservado para esta meta; un retiro lo reduce. Son anotaciones de ahorro: no crean movimientos, no cambian tu saldo general ni consumen presupuestos. Los saldos anteriores se conservan como saldo inicial.</p>
     {error&&<p role="alert" className="text-danger">{error}<button className="ml-3 underline" onClick={()=>window.location.reload()}>Recargar</button></p>}{message&&<p role="status" className="text-accent">{message}</p>}
     <label className="flex items-center gap-2"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/>Mostrar metas archivadas</label>
