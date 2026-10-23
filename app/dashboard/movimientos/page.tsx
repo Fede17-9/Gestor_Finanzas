@@ -1,766 +1,243 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
-import { ArrowLeftRight, Plus, Calendar, Search, X, TrendingUp, TrendingDown, Layers, CreditCard, Repeat, Zap, Pencil, Trash2, AlertTriangle } from "lucide-react";
-import ConfirmModal from "@/components/ConfirmModal";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { createFinanceReader } from '@/lib/finance-data';
+import { amountToCents, centsToDecimal, civilToday, formatAmount, isCivilDate, movementSign, readAllPages } from '@/lib/finance';
+import type { Category, Movement } from '@/lib/finance';
+import { ArrowLeftRight, Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import Dialog from '@/components/ui/Dialog';
+import ConfirmModal from '@/components/ConfirmModal';
+
+const reader = createFinanceReader(supabase);
 
 export default function MovimientosPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [movimientos, setMovimientos] = useState<any[]>([]);
-  const [categoriasLista, setCategoriasLista] = useState<any[]>([]);
-
-  // Estados del Formulario Flotante (Modal)
+  const [loadError, setLoadError] = useState('');
+  const [currency, setCurrency] = useState('COP');
+  const [movimientos, setMovimientos] = useState<Movement[]>([]);
+  const [categoriasLista, setCategoriasLista] = useState<Category[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [monto, setMonto] = useState("");
-  const [descripcion, setDescripcion] = useState("");
-  const [tipoMovimiento, setTipoMovimiento] = useState("2"); // 2 = Egreso por defecto
-  const [metodoPago, setMetodoPago] = useState("Efectivo");
-  const [categoria, setCategoria] = useState(""); 
-  const [fechaOperacion, setFechaOperacion] = useState(new Date().toISOString().split('T')[0]);
-  
-  // Recurrencia
-  const [isRecurrente, setIsRecurrente] = useState(false);
-  const [frecuencia, setFrecuencia] = useState("Mensual");
-  const [diaEjecucion, setDiaEjecucion] = useState("1");
-  const [fechaFin, setFechaFin] = useState("");
-  
+  const [monto, setMonto] = useState('');
+  const [descripcion, setDescripcion] = useState('');
+  const [tipoMovimiento, setTipoMovimiento] = useState('2');
+  const [metodoPago, setMetodoPago] = useState('Efectivo');
+  const [categoria, setCategoria] = useState('');
+  const [fechaOperacion, setFechaOperacion] = useState(civilToday);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Buscador en memoria
-  const [searchTerm, setSearchTerm] = useState("");
-
-  // ── Toasts ────────────────────────────────────────────────────────────────
-  const [toasts, setToasts] = useState<{id:number; msg:string; type:'ok'|'err'}[]>([]);
-  let _tid = 0;
-  function toast(msg: string, type: 'ok'|'err' = 'ok') {
-    const id = ++_tid;
-    setToasts(prev => [...prev, { id, msg, type }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
-  }
-
-  // ── Estados modal Editar ──────────────────────────────────────────────────
-  const [editMov, setEditMov] = useState<any | null>(null);
-  const [editTipo, setEditTipo] = useState("2");
-  const [editMonto, setEditMonto] = useState("");
-  const [editDescripcion, setEditDescripcion] = useState("");
-  const [editMetodo, setEditMetodo] = useState("Efectivo");
-  const [editCategoria, setEditCategoria] = useState("");
-  const [editFecha, setEditFecha] = useState("");
+  const [searchTerm, setSearchTerm] = useState('');
+  const [toasts, setToasts] = useState<{ id: number; msg: string; type: 'ok' | 'err' }[]>([]);
+  const toastId = useRef(0);
+  const submitLock = useRef(false);
+  const [editMov, setEditMov] = useState<Movement | null>(null);
+  const [editTipo, setEditTipo] = useState('2');
+  const [editMonto, setEditMonto] = useState('');
+  const [editDescripcion, setEditDescripcion] = useState('');
+  const [editMetodo, setEditMetodo] = useState('Efectivo');
+  const [editCategoria, setEditCategoria] = useState('');
+  const [editFecha, setEditFecha] = useState('');
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingMov, setPendingMov] = useState<Movement | null>(null);
+  const [formError, setFormError] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
-  function abrirEditar(mov: any) {
-    setEditMov(mov);
-    setEditTipo(String(mov.id_tipo));
-    setEditMonto(String(mov.monto_transaccion));
-    setEditDescripcion(mov.descripcion_detalle ?? "");
-    setEditMetodo(mov.metodo_pago ?? "Efectivo");
-    setEditCategoria(mov.categorias?.nombre_categoria ?? "");
-    setEditFecha(mov.fecha_operacion.split('T')[0]);
+  function toast(msg: string, type: 'ok' | 'err' = 'ok') {
+    const id = ++toastId.current;
+    setToasts(previous => [...previous, { id, msg, type }]);
+    setTimeout(() => setToasts(previous => previous.filter(item => item.id !== id)), 3500);
   }
 
-  const handleActualizar = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editMov) return;
-    const montoN = parseFloat(editMonto);
-    if (!editMonto || montoN <= 0) { toast("El monto debe ser mayor que cero.", "err"); return; }
-    if (!editFecha) { toast("La fecha es obligatoria.", "err"); return; }
-    if (!editDescripcion.trim()) { toast("Complete los campos obligatorios.", "err"); return; }
-
-    setIsEditSubmitting(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setIsEditSubmitting(false); return; }
-
-    // Resolver categoría
-    let finalCatId = editMov.id_categoria ?? null;
-    const nombreCat = editCategoria.trim();
-    if (nombreCat) {
-      const existing = categoriasLista.find(
-        c => c.nombre_categoria.toLowerCase() === nombreCat.toLowerCase()
-      );
-      if (existing) {
-        finalCatId = existing.id_categoria;
-      } else {
-        const { data: nc } = await supabase
-          .from('categorias')
-          .insert([{ id_usuario: session.user.id, nombre_categoria: nombreCat }])
-          .select('id_categoria')
-          .single();
-        if (nc) finalCatId = nc.id_categoria;
-      }
-    } else {
-      finalCatId = null;
-    }
-
-    console.log("[Flux] Editando id_movimiento:", editMov.id_movimiento, "| id_usuario:", session.user.id);
-
-    const { data: updatedRow, error } = await supabase
-      .from('movimientos')
-      .update({
-        id_tipo: Number(editTipo),
-        monto_transaccion: montoN,
-        metodo_pago: editMetodo,
-        id_categoria: finalCatId,
-        fecha_operacion: editFecha,
-        descripcion_detalle: editDescripcion.trim(),
-      })
-      .eq('id_movimiento', editMov.id_movimiento)
-      .eq('id_usuario', session.user.id)
-      .select('id_movimiento')
-      .single();
-
-    console.log("[Flux] Resultado UPDATE:", updatedRow, error);
-
-    if (error) {
-      toast("No se pudo actualizar el movimiento.", "err");
-    } else if (!updatedRow) {
-      toast("No se encontró el movimiento o no tienes permiso para actualizarlo.", "err");
-    } else {
-      toast("Movimiento actualizado correctamente.");
-      setEditMov(null);
-      fetchData();
-    }
-    setIsEditSubmitting(false);
-  };
-
-  // ── Estados modal de confirmación (reemplaza window.confirm) ────────────────
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingMov, setPendingMov] = useState<any | null>(null);
-
-  // Paso 1: pide confirmación visual (sin ejecutar nada todavía)
-  const handleEliminar = (mov: any) => {
-    setPendingMov(mov);
-    setConfirmOpen(true);
-  };
-
-  // Paso 2: usuario confirmó → ejecutar DELETE real
-  const confirmarEliminar = async () => {
-    setConfirmOpen(false);
-    if (!pendingMov) return;
-    const mov = pendingMov;
-    setPendingMov(null);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    console.log("[Flux] Eliminando id_movimiento:", mov.id_movimiento, "| id_usuario:", session.user.id);
-
-    const { data: deletedRows, error } = await supabase
-      .from('movimientos')
-      .delete()
-      .eq('id_movimiento', mov.id_movimiento)
-      .eq('id_usuario', session.user.id)
-      .select('id_movimiento');
-
-    console.log("[Flux] Resultado DELETE:", deletedRows, error);
-
-    if (error) {
-      toast("No se pudo eliminar el movimiento.", "err");
-    } else if (!deletedRows || deletedRows.length === 0) {
-      toast("No se encontró el movimiento o no tienes permiso para eliminarlo.", "err");
-    } else {
-      toast("Movimiento eliminado correctamente.");
-      fetchData();
-    }
-  };
-
-  // Paso 3: usuario canceló
-  const cancelarEliminar = () => {
-    setConfirmOpen(false);
-    setPendingMov(null);
-  };
-
-  // Funciones de carga
-  const fetchData = async () => {
-    setLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    // 1. Cargar Movimientos (ahora incluimos es_automatico para mostrar el ⚡)
-    const { data: movData, error: movError } = await supabase
-      .from('movimientos')
-      .select('id_movimiento, monto_transaccion, descripcion_detalle, fecha_operacion, id_tipo, metodo_pago, es_automatico, categorias(nombre_categoria)')
-      .order('fecha_operacion', { ascending: false });
-
-    // 2. Cargar Categorías
-    const { data: catData, error: catError } = await supabase
-      .from('categorias')
-      .select('id_categoria, nombre_categoria')
-      .or(`id_usuario.eq.${session.user.id},id_usuario.is.null`);
-
-    if (movData && !movError) setMovimientos(movData);
-    if (catData && !catError) setCategoriasLista(catData);
-    
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line
+  const fetchData = useCallback(async () => {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error || !session) throw new Error('No se pudo comprobar tu sesión. Vuelve a iniciar sesión.');
+    const [movements, profile, categories] = await Promise.all([
+      reader.movements(session.user.id), reader.profile(session.user.id),
+      readAllPages(async (from, to) => {
+        const { data, error } = await supabase.from('categorias').select('id_categoria, nombre_categoria')
+          .or('id_usuario.eq.' + session.user.id + ',id_usuario.is.null')
+          .order('id_categoria', { ascending: true }).range(from, to);
+        if (error || !data) throw new Error('No se pudieron cargar las categorías.');
+        return data;
+      }),
+    ]);
+    return { movements, profile, categories };
   }, []);
 
-  // Función para guardar el registro 
-  const handleGuardar = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const applyData = useCallback((snapshot: Awaited<ReturnType<typeof fetchData>>) => {
+    setMovimientos(snapshot.movements);
+    setCurrency(snapshot.profile.codigo_moneda);
+    setCategoriasLista(snapshot.categories);
+    setLoadError('');
+  }, []);
+
+  async function refreshData() {
+    setLoading(true);
+    try { applyData(await fetchData()); }
+    catch (error) { setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar los movimientos.'); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => {
+    let active = true;
+    fetchData().then(snapshot => { if (active) applyData(snapshot); })
+      .catch(error => { if (active) setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar los movimientos.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [fetchData, applyData]);
+
+  async function resolveCategory(name: string, userId: string): Promise<string | null> {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const existing = categoriasLista.find(item => item.nombre_categoria.toLowerCase() === trimmed.toLowerCase());
+    if (existing) return existing.id_categoria;
+    const { data, error } = await supabase.from('categorias')
+      .insert([{ id_usuario: userId, nombre_categoria: trimmed }]).select('id_categoria').single();
+    if (error || !data) throw new Error('No se pudo guardar la categoría. Revisa los datos e intenta de nuevo.');
+    return data.id_categoria;
+  }
+
+  function validateDate(date: string) {
+    if (!isCivilDate(date)) throw new Error('Selecciona una fecha válida.');
+    if (date > civilToday()) throw new Error('Registra la operación cuando ocurra. Usa una recurrencia para planificarla.');
+  }
+
+  function abrirEditar(movement: Movement) {
+    setFormError('');
+    if (movement.id_ocurrencia) { router.push('/dashboard/recurrencias'); return; }
+    setEditMov(movement);
+    setEditTipo(String(movement.id_tipo));
+    setEditMonto(String(movement.monto_transaccion));
+    setEditDescripcion(movement.descripcion_detalle ?? '');
+    setEditMetodo(movement.metodo_pago ?? 'Efectivo');
+    setEditCategoria(movement.categorias?.nombre_categoria ?? '');
+    setEditFecha(movement.fecha_operacion.split('T')[0]);
+  }
+
+  async function handleActualizar(event: React.FormEvent) {
+    event.preventDefault();
+    if (!editMov || submitLock.current) return;
+    submitLock.current = true;
+    setIsEditSubmitting(true);
+    setFormError('');
+    try {
+      const cents = amountToCents(editMonto);
+      validateDate(editFecha);
+      if (!editDescripcion.trim()) throw new Error('La descripción es obligatoria.');
+      if (![1, 2, 3, 4].includes(Number(editTipo))) throw new Error('Tipo de movimiento inválido.');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.replace('/login'); return; }
+      const categoryId = await resolveCategory(editCategoria, session.user.id);
+      const { data, error } = await supabase.from('movimientos').update({
+        id_tipo: Number(editTipo), monto_transaccion: centsToDecimal(cents),
+        metodo_pago: editMetodo, id_categoria: categoryId, fecha_operacion: editFecha,
+        descripcion_detalle: editDescripcion.trim(),
+      }).eq('id_movimiento', editMov.id_movimiento).eq('id_usuario', session.user.id).select('id_movimiento').single();
+      if (error || !data) throw new Error('No se pudo actualizar el movimiento. Comprueba tus permisos.');
+      setEditMov(null);
+      toast('Movimiento actualizado.');
+      await refreshData();
+    } catch (error) {
+      const message=error instanceof Error ? error.message : 'No se pudo actualizar el movimiento.';
+      setFormError(message); toast(message, 'err');
+    } finally {
+      submitLock.current = false;
+      setIsEditSubmitting(false);
+    }
+  }
+
+  function handleEliminar(movement: Movement) {
+    setDeleteError('');
+    if (movement.id_ocurrencia) { router.push('/dashboard/recurrencias'); return; }
+    setPendingMov(movement);
+    setConfirmOpen(true);
+  }
+
+  async function confirmarEliminar() {
+    if (!pendingMov || submitLock.current) return;
+    const movement = pendingMov;
+    submitLock.current = true;
+    setDeleteBusy(true); setDeleteError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.replace('/login'); return; }
+      const { data, error } = await supabase.from('movimientos').delete()
+        .eq('id_movimiento', movement.id_movimiento).eq('id_usuario', session.user.id).select('id_movimiento');
+      if (error || !data?.length) throw new Error('No se pudo eliminar el movimiento. Comprueba tus permisos.');
+      setConfirmOpen(false); setPendingMov(null);
+      toast('Movimiento eliminado.');
+      await refreshData();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'No se pudo eliminar el movimiento.');
+    } finally {
+      submitLock.current = false;
+      setDeleteBusy(false);
+    }
+  }
+
+  function cancelarEliminar() { setConfirmOpen(false); setPendingMov(null); }
+
+  async function handleGuardar(event: React.FormEvent) {
+    event.preventDefault();
+    if (submitLock.current) return;
+    submitLock.current = true;
     setIsSubmitting(true);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    let finalCategoriaId = null;
-
-    if (categoria.trim() !== "") {
-      const nombreCat = categoria.trim();
-      const catExistente = categoriasLista.find(
-        (c) => c.nombre_categoria.toLowerCase() === nombreCat.toLowerCase()
-      );
-
-      if (catExistente) {
-        finalCategoriaId = catExistente.id_categoria;
-      } else {
-        const { data: newCat, error: catError } = await supabase
-          .from('categorias')
-          .insert([{ 
-            id_usuario: session.user.id, 
-            nombre_categoria: nombreCat 
-          }])
-          .select('id_categoria')
-          .single();
-
-        if (newCat && !catError) {
-          finalCategoriaId = newCat.id_categoria;
-        }
-      }
-    }
-
-    // 1. Insertar el Movimiento Base
-    // Al ser una inserción manual humana, el DB default para es_automatico es FALSE, lo cual es perfecto.
-    const { error: movError } = await supabase.from('movimientos').insert([
-      {
-        id_usuario: session.user.id,
-        id_tipo: parseInt(tipoMovimiento),
-        id_categoria: finalCategoriaId,
-        monto_transaccion: parseFloat(monto),
-        metodo_pago: metodoPago,
-        descripcion_detalle: descripcion,
-        fecha_operacion: fechaOperacion,
-        es_automatico: isRecurrente 
-      }
-    ]);
-
-    if (movError) {
-      alert("Error en módulo Movimientos: " + movError.message);
+    setFormError('');
+    try {
+      const cents = amountToCents(monto);
+      validateDate(fechaOperacion);
+      if (!descripcion.trim()) throw new Error('La descripción es obligatoria.');
+      if (!['1', '2'].includes(tipoMovimiento)) throw new Error('Tipo de movimiento inválido.');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.replace('/login'); return; }
+      const categoryId = await resolveCategory(categoria, session.user.id);
+      const { error } = await supabase.from('movimientos').insert([{
+        id_usuario: session.user.id, id_tipo: Number(tipoMovimiento), id_categoria: categoryId,
+        monto_transaccion: centsToDecimal(cents), metodo_pago: metodoPago, fecha_operacion: fechaOperacion,
+        descripcion_detalle: descripcion.trim(), es_automatico: false,
+      }]);
+      if (error) throw new Error('No se pudo guardar el movimiento.');
+      setIsModalOpen(false);
+      setMonto(''); setDescripcion(''); setCategoria(''); setMetodoPago('Efectivo');
+      setFechaOperacion(civilToday());
+      toast('Movimiento guardado.');
+      await refreshData();
+    } catch (error) {
+      const message=error instanceof Error ? error.message : 'No se pudo guardar el movimiento.';
+      setFormError(message); toast(message, 'err');
+    } finally {
+      submitLock.current = false;
       setIsSubmitting(false);
-      return;
     }
+  }
 
-    // 2. Insertar Recurrencia si está activada
-    if (isRecurrente) {
-      const { error: recError } = await supabase.from('config_recurrencias').insert([
-        {
-          id_usuario: session.user.id,
-          id_tipo: parseInt(tipoMovimiento),
-          id_categoria: finalCategoriaId,
-          monto_recurrente: parseFloat(monto),
-          frecuencia: frecuencia,
-          dia_ejecucion: parseInt(diaEjecucion) || 1,
-          fecha_inicio: new Date().toISOString().split('T')[0],
-          fecha_fin: fechaFin ? fechaFin : null
-        }
-      ]);
-      if (recError) alert("El movimiento se guardó pero falló la recurrencia: " + recError.message);
-    }
-
-    // Limpiar modal y recargar tabla
-    setIsModalOpen(false);
-    setMonto("");
-    setDescripcion("");
-    setCategoria("");
-    setMetodoPago("Efectivo");
-    setFechaOperacion(new Date().toISOString().split('T')[0]);
-    setIsRecurrente(false);
-    setFrecuencia("Mensual");
-    setDiaEjecucion("1");
-    setFechaFin("");
-    fetchData(); 
-    setIsSubmitting(false);
-  };
-
-  return (
-    <div className="max-w-7xl mx-auto pb-10 animate-in fade-in duration-500 relative">
-      
-      {/* Header de Interfaz */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-white tracking-widest uppercase flex items-center gap-3">
-            <ArrowLeftRight className="text-[#39FF14]" size={30} strokeWidth={2.5} />
-            Transacciones
-          </h1>
-          <p className="text-zinc-500 font-mono text-[10px] uppercase tracking-widest mt-2 border-l-2 border-[#39FF14] pl-3 py-0.5">
-            Registro cifrado del Flujo de Caja
-          </p>
-        </div>
-
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-[#39FF14] text-black font-black uppercase tracking-widest text-[11px] px-6 py-3.5 rounded-xl hover:bg-[#a3e635] hover:shadow-[0_0_20px_rgba(57,255,20,0.3)] transition-all active:scale-95"
-        >
-          <Plus size={16} strokeWidth={3} />
-          Nuevo Registro
-        </button>
-      </div>
-
-      {/* Panel de Comandos */}
-      <div className="bg-[#09090b] border border-zinc-800/50 p-4 rounded-2xl flex flex-col xl:flex-row gap-4 mb-6 shadow-2xl relative overflow-hidden group">
-        <div className="absolute top-0 left-0 w-1 h-full bg-zinc-800 group-hover:bg-[#39FF14] transition-colors duration-500"></div>
-        <div className="flex-1 relative pl-2 flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="BUSCAR OPERACIÓN..."
-              className="w-full bg-zinc-900/50 border border-zinc-800 text-white text-xs font-mono tracking-wider px-12 py-3.5 rounded-xl focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all placeholder-zinc-600 shadow-inner"
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm("")}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors"
-                title="Limpiar búsqueda"
-              >
-                <X size={15} />
-              </button>
-            )}
-          </div>
-          {/* Contador de resultados */}
-          <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest whitespace-nowrap shrink-0">
-            {searchTerm
-              ? `${movimientos.filter((mov) => {
-                  const q = searchTerm.toLowerCase().trim();
-                  const categoria = mov.categorias?.nombre_categoria ?? "";
-                  const descripcion = mov.descripcion_detalle ?? "";
-                  const metodo = mov.metodo_pago ?? "";
-                  const monto = String(mov.monto_transaccion ?? "");
-                  const fecha = mov.fecha_operacion ?? "";
-                  const tipo = mov.id_tipo === 1 ? "ingreso" : "egreso";
-                  return (
-                    categoria.toLowerCase().includes(q) ||
-                    descripcion.toLowerCase().includes(q) ||
-                    metodo.toLowerCase().includes(q) ||
-                    monto.includes(q) ||
-                    fecha.includes(q) ||
-                    tipo.includes(q)
-                  );
-                }).length} resultado(s)`
-              : `${movimientos.length} registro(s)`}
-          </span>
-        </div>
-      </div>
-
-      {/* Tabla de Base de Datos */}
-      <div className="bg-[#09090b] border border-zinc-800/50 rounded-2xl overflow-hidden shadow-2xl relative min-h-[300px] flex flex-col">
-        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#39FF14]/30 to-transparent"></div>
-        
-        {loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-20 gap-4 text-[#39FF14]">
-            <div className="relative">
-              <ArrowLeftRight size={32} className="animate-spin text-zinc-800" />
-              <div className="absolute inset-0 border-t-2 border-[#39FF14] rounded-full animate-spin" style={{ animationDuration: '0.8s' }}></div>
-            </div>
-            <span className="font-mono text-[10px] tracking-widest uppercase animate-pulse">Desencriptando Módulo...</span>
-          </div>
-        ) : movimientos.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-20 gap-2 text-zinc-500 bg-zinc-900/10">
-            <span className="font-mono text-sm tracking-widest uppercase text-zinc-600">No hay registros activos</span>
-            <span className="font-mono text-[9px] tracking-widest">Inyecta un nuevo registro para iniciar estadística</span>
-          </div>
-        ) : (() => {
-          // Filtrado en memoria — no genera nuevas consultas a Supabase
-          const q = searchTerm.toLowerCase().trim();
-          const filteredMovimientos = q
-            ? movimientos.filter((mov) => {
-                const categoria  = mov.categorias?.nombre_categoria ?? "";
-                const descripcion = mov.descripcion_detalle ?? "";
-                const metodo     = mov.metodo_pago ?? "";
-                const monto      = String(mov.monto_transaccion ?? "");
-                const fecha      = mov.fecha_operacion ?? "";
-                const tipo       = mov.id_tipo === 1 ? "ingreso" : "egreso";
-                return (
-                  categoria.toLowerCase().includes(q) ||
-                  descripcion.toLowerCase().includes(q) ||
-                  metodo.toLowerCase().includes(q) ||
-                  monto.includes(q) ||
-                  fecha.includes(q) ||
-                  tipo.includes(q)
-                );
-              })
-            : movimientos;
-
-          if (filteredMovimientos.length === 0) {
-            return (
-              <div className="flex-1 flex flex-col items-center justify-center p-20 gap-2 text-zinc-500 bg-zinc-900/10">
-                <Search size={28} className="text-zinc-700 mb-2" />
-                <span className="font-mono text-sm tracking-widest uppercase text-zinc-600">Sin resultados</span>
-                <span className="font-mono text-[9px] tracking-widest">No se encontraron operaciones para esta búsqueda.</span>
-                <button
-                  onClick={() => setSearchTerm("")}
-                  className="mt-4 text-[10px] font-bold text-[#39FF14] uppercase tracking-widest hover:text-white transition-colors"
-                >
-                  Limpiar búsqueda
-                </button>
-              </div>
-            );
-          }
-
-          return (
-          <div className="w-full overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-zinc-800 text-zinc-500 text-[10px] uppercase font-bold tracking-widest bg-zinc-900/30">
-                  <th className="p-4 pl-6 w-32">Fecha</th>
-                  <th className="p-4 min-w-[200px]">Detalle / Categoría</th>
-                  <th className="p-4 w-40">Método / Ref</th>
-                  <th className="p-4 text-right w-40">Monto</th>
-                  <th className="p-4 text-center w-28">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMovimientos.map((mov) => {
-                  const [year, month, day] = mov.fecha_operacion.split('T')[0].split('-');
-                  const fechaOp = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-                  const fecha = fechaOp.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
-                  const isIngreso = mov.id_tipo === 1;
-                  const catNombre = mov.categorias?.nombre_categoria || "Sin categoría";
-
-                  return (
-                    <tr key={mov.id_movimiento} className="border-b border-zinc-800/50 hover:bg-zinc-900/50 transition-colors group">
-                      <td className="p-4 pl-6 font-mono text-xs text-zinc-500 uppercase">{fecha}</td>
-                      <td className="p-4 text-sm text-zinc-300 font-medium">
-                        <div className="flex items-center gap-3">
-                          {isIngreso ? <TrendingUp size={16} className="text-[#39FF14] shrink-0" /> : <TrendingDown size={16} className="text-[#ff3939] shrink-0" />}
-                          <div className="flex flex-col">
-                            <span className="flex items-center gap-2">
-                              {mov.descripcion_detalle || 'Operación'}
-                              {/* ⚡ Rayo si el registro nació de la máquina automática */}
-                              {mov.es_automatico && (
-                                <span title="Generado por el sistema de forma automática" className="flex items-center">
-                                  <Zap size={12} className="text-[#39FF14] fill-[#39FF14]" />
-                                </span>
-                              )}
-                            </span>
-                            <span className="text-[9px] text-zinc-500 font-mono tracking-widest">{catNombre}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4 font-mono text-[10px] text-zinc-400">
-                        {mov.metodo_pago || 'Desconocido'}
-                      </td>
-                      <td className={`p-4 text-right font-mono font-bold tracking-tight text-lg ${isIngreso ? 'text-[#39FF14]' : 'text-white'}`}>
-                        {isIngreso ? '+' : '-'}${mov.monto_transaccion.toLocaleString()}
-                      </td>
-                      {/* Columna Acciones */}
-                      <td className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                          <button
-                            onClick={() => abrirEditar(mov)}
-                            title="Editar movimiento"
-                            className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-all"
-                          >
-                            <Pencil size={13} />
-                          </button>
-                          <button
-                            onClick={() => handleEliminar(mov)}
-                            title="Eliminar movimiento"
-                            className="p-1.5 rounded-lg bg-[#ff3939]/10 hover:bg-[#ff3939]/20 text-[#ff3939] border border-[#ff3939]/20 hover:border-[#ff3939]/40 transition-all"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          );
-        })()}
-      </div>
-
-      {/* 🚀 Modal / Ventana Flotante Avanzada para Nuevo Registro */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-[#09090b] border border-zinc-800 rounded-3xl p-6 w-full max-w-sm shadow-[0_0_50px_rgba(57,255,20,0.1)] relative max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <button 
-              onClick={() => setIsModalOpen(false)}
-              className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors"
-            >
-              <X size={20} />
-            </button>
-            
-            <h2 className="text-lg font-black text-white uppercase tracking-widest mb-6 border-b border-zinc-800 pb-4">
-              NUEVA OPERACIÓN
-            </h2>
-
-            <form onSubmit={handleGuardar} className="flex flex-col gap-4">
-              
-              {/* Selector de Tipo */}
-              <div className="flex bg-zinc-900 rounded-xl p-1 border border-zinc-800 gap-1">
-                <button type="button" onClick={() => setTipoMovimiento("1")} 
-                  className={`flex-1 py-2.5 text-[10px] font-black tracking-widest uppercase rounded-lg transition-all ${tipoMovimiento === "1" ? "bg-[#39FF14] text-black shadow-[0_0_15px_rgba(57,255,20,0.2)]" : "text-zinc-500 hover:text-zinc-300"}`}>
-                  Ingreso (+)
-                </button>
-                <button type="button" onClick={() => setTipoMovimiento("2")} 
-                  className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${tipoMovimiento === "2" ? "bg-[#ff3939] text-white shadow-[0_0_15px_rgba(255,57,57,0.2)]" : "text-zinc-500 hover:text-zinc-300"}`}>
-                  Egreso (-)
-                </button>
-              </div>
-
-               {/* Monto */}
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Monto Transado</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 font-bold">$</span>
-                  <input type="number" step="0.01" required value={monto} onChange={(e) => setMonto(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-10 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all font-mono font-bold"
-                    placeholder="0.00" />
-                </div>
-              </div>
-
-               {/* Método de Pago y Categoría */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1 flex items-center gap-1">
-                    <CreditCard size={12} /> Método
-                  </label>
-                  <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all text-xs">
-                    <option value="Efectivo">Efectivo 💵</option>
-                    <option value="Transferencia">Transferencia 🏦</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1 flex items-center gap-1">
-                    <Layers size={12} /> Categoría
-                  </label>
-                  <input
-                    type="text"
-                    value={categoria}
-                    onChange={(e) => setCategoria(e.target.value)}
-                    list="categorias-list"
-                    placeholder="Ej: Mesada"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all text-xs"
-                  />
-                  <datalist id="categorias-list">
-                    {categoriasLista.map(cat => (
-                      <option key={cat.id_categoria} value={cat.nombre_categoria} />
-                    ))}
-                  </datalist>
-                </div>
-              </div>
-
-              {/* Fecha y Descripción */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Fecha Operación</label>
-                  <input type="date" required value={fechaOperacion} onChange={(e) => setFechaOperacion(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#39FF14] transition-all font-medium text-xs [color-scheme:dark]" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Descripción Breve</label>
-                  <input type="text" required value={descripcion} onChange={(e) => setDescripcion(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#39FF14] transition-all font-medium text-sm placeholder-zinc-600"
-                    placeholder="Ej: Salario Quincena" />
-                </div>
-              </div>
-
-              {/* Automátización / Recurrencia */}
-              <div className="mt-2 border border-zinc-800 rounded-xl p-4 bg-zinc-900/50">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={isRecurrente} onChange={(e) => setIsRecurrente(e.target.checked)} className="peer sr-only" />
-                  <div className="w-10 h-5 bg-zinc-800 rounded-full peer-checked:bg-[#39FF14] relative transition-colors">
-                    <div className="absolute top-1 left-1 bg-white w-3 h-3 rounded-full transition-transform peer-checked:translate-x-5 shadow-sm"></div>
-                  </div>
-                  <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-                    <Repeat size={14} className={isRecurrente ? "text-[#39FF14]" : "text-zinc-600"} />
-                    ¿Automatizar Operación?
-                  </span>
-                </label>
-
-                {isRecurrente && (
-                  <div className="mt-4 pt-4 border-t border-zinc-800/50 animate-in fade-in slide-in-from-top-2 flex flex-col gap-3">
-                    
-                    <div>
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Frecuencia de Repetición</label>
-                      <select value={frecuencia} onChange={(e) => setFrecuencia(e.target.value)}
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white outline-none transition-all text-xs">
-                        <option value="Diario">Diario</option>
-                        <option value="Semanal">Semanal</option>
-                        <option value="Mensual">Mensual</option>
-                        <option value="Anual">Anual</option>
-                      </select>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-1">
-                          <Calendar size={12}/> Día del mes
-                        </label>
-                        <input type="number" min="1" max="31" required value={diaEjecucion} onChange={(e) => setDiaEjecucion(e.target.value)}
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white outline-none text-xs"
-                          placeholder="1-31" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Fecha Fin (Opcional)</label>
-                        <input type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)}
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-400 outline-none text-xs [color-scheme:dark]" />
-                      </div>
-                    </div>
-
-                    <p className="text-[9px] text-zinc-500 font-mono mt-1 tracking-widest leading-relaxed">
-                      Se programará en tu <span className="text-[#39FF14]">config_recurrencias</span>. El sistema insertará estas copias a futuro marcadas como automáticas <Zap size={8} className="inline text-[#39FF14] fill-[#39FF14] mb-0.5" />.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <button type="submit" disabled={isSubmitting} className="w-full bg-white text-black font-black uppercase tracking-widest text-[11px] py-4 mt-2 rounded-xl hover:bg-zinc-200 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:shadow-[0_0_20px_rgba(255,255,255,0.3)]">
-                {isSubmitting ? "PROCESANDO..." : "GRABAR EN BITÁCORA"}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── Toasts ── */}
-      <div className="fixed top-6 right-6 z-[200] flex flex-col gap-2 pointer-events-none">
-        {toasts.map(t => (
-          <div key={t.id} className={`px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest shadow-2xl border pointer-events-auto animate-in fade-in slide-in-from-right-4 duration-300 ${
-            t.type === 'ok'
-              ? 'bg-[#09090b] border-[#39FF14]/40 text-[#39FF14]'
-              : 'bg-[#09090b] border-[#ff3939]/40 text-[#ff3939]'
-          }`}>{t.msg}</div>
-        ))}
-      </div>
-
-      {/* ════════════════════════════════════════
-          MODAL — Editar Movimiento
-      ════════════════════════════════════════ */}
-      {editMov && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-[#09090b] border border-zinc-800 rounded-3xl p-6 w-full max-w-sm shadow-[0_0_50px_rgba(57,255,20,0.1)] relative max-h-[90vh] overflow-y-auto">
-            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#39FF14]/40 to-transparent" />
-            <button onClick={() => setEditMov(null)} className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors">
-              <X size={20} />
-            </button>
-
-            <h2 className="text-lg font-black text-white uppercase tracking-widest mb-1 border-b border-zinc-800 pb-4 flex items-center gap-2">
-              <Pencil size={16} className="text-[#39FF14]" /> Editar Operación
-            </h2>
-
-            {/* Advertencia movimiento automático */}
-            {editMov.es_automatico && (
-              <div className="flex items-start gap-2 bg-yellow-400/5 border border-yellow-400/20 rounded-xl p-3 mb-4 mt-4">
-                <AlertTriangle size={14} className="text-yellow-400 shrink-0 mt-0.5" />
-                <p className="text-[10px] text-yellow-400/80 font-mono tracking-widest leading-relaxed">
-                  Movimiento automático: este cambio no modifica la regla recurrente.
-                </p>
-              </div>
-            )}
-
-            <form onSubmit={handleActualizar} className="flex flex-col gap-4 mt-4">
-              {/* Tipo */}
-              <div className="flex bg-zinc-900 rounded-xl p-1 border border-zinc-800 gap-1">
-                <button type="button" onClick={() => setEditTipo("1")}
-                  className={`flex-1 py-2.5 text-[10px] font-black tracking-widest uppercase rounded-lg transition-all ${
-                    editTipo === "1" ? "bg-[#39FF14] text-black shadow-[0_0_15px_rgba(57,255,20,0.2)]" : "text-zinc-500 hover:text-zinc-300"
-                  }`}>
-                  Ingreso (+)
-                </button>
-                <button type="button" onClick={() => setEditTipo("2")}
-                  className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
-                    editTipo === "2" ? "bg-[#ff3939] text-white shadow-[0_0_15px_rgba(255,57,57,0.2)]" : "text-zinc-500 hover:text-zinc-300"
-                  }`}>
-                  Egreso (-)
-                </button>
-              </div>
-
-              {/* Monto */}
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Monto *</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 font-bold">$</span>
-                  <input type="number" step="0.01" required value={editMonto} onChange={e => setEditMonto(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-10 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all font-mono font-bold"
-                    placeholder="0.00" />
-                </div>
-              </div>
-
-              {/* Método y Categoría */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1 flex items-center gap-1"><CreditCard size={12}/> Método</label>
-                  <select value={editMetodo} onChange={e => setEditMetodo(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all text-xs">
-                    <option value="Efectivo">Efectivo 💵</option>
-                    <option value="Transferencia">Transferencia 🏦</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1 flex items-center gap-1"><Layers size={12}/> Categoría</label>
-                  <input type="text" value={editCategoria} onChange={e => setEditCategoria(e.target.value)}
-                    list="edit-categorias-list" placeholder="Ej: Mesada"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-3 text-white focus:border-[#39FF14] focus:ring-1 focus:ring-[#39FF14] outline-none transition-all text-xs" />
-                  <datalist id="edit-categorias-list">
-                    {categoriasLista.map(cat => (
-                      <option key={cat.id_categoria} value={cat.nombre_categoria} />
-                    ))}
-                  </datalist>
-                </div>
-              </div>
-
-              {/* Fecha y Descripción */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Fecha *</label>
-                  <input type="date" required value={editFecha} onChange={e => setEditFecha(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#39FF14] transition-all font-medium text-xs [color-scheme:dark]" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 ml-1">Descripción *</label>
-                  <input type="text" required value={editDescripcion} onChange={e => setEditDescripcion(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#39FF14] transition-all font-medium text-sm placeholder-zinc-600"
-                    placeholder="Ej: Salario" />
-                </div>
-              </div>
-
-              <button type="submit" disabled={isEditSubmitting}
-                className="w-full bg-[#39FF14] text-black font-black uppercase tracking-widest text-xs py-4 mt-2 rounded-xl hover:bg-[#a3e635] hover:shadow-[0_0_20px_rgba(57,255,20,0.4)] transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                {isEditSubmitting ? "ACTUALIZANDO..." : "GUARDAR CAMBIOS"}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ══ Modal de Confirmación de Eliminación ══ */}
-      <ConfirmModal
-        open={confirmOpen}
-        title={pendingMov?.es_automatico ? "Eliminar movimiento automático" : "Eliminar movimiento"}
-        message={
-          pendingMov?.es_automatico
-            ? "Este movimiento fue generado automáticamente. Si lo eliminas, solo se eliminará este registro puntual. La regla recurrente seguirá activa."
-            : "¿Seguro que deseas eliminar este movimiento? Esta acción no se puede deshacer."
-        }
-        confirmText="Sí, eliminar"
-        cancelText="Cancelar"
-        confirmVariant="danger"
-        onConfirm={confirmarEliminar}
-        onCancel={cancelarEliminar}
-      />
-
-    </div>
-  );
+  function fields(editing:boolean){
+    const type=editing?editTipo:tipoMovimiento,amount=editing?editMonto:monto,detail=editing?editDescripcion:descripcion;
+    const payment=editing?editMetodo:metodoPago,category=editing?editCategoria:categoria,date=editing?editFecha:fechaOperacion;
+    return <>
+      <div className="form-grid"><label className="field-label">Tipo<select className="field" value={type} onChange={e=>(editing?setEditTipo:setTipoMovimiento)(e.target.value)}><option value="1">Ingreso</option><option value="2">Egreso</option>{editing&&<><option value="3">Inversión</option><option value="4">Transferencia</option></>}</select></label><label className="field-label">Importe ({currency})<input autoFocus className="field" type="number" min="0.01" max="9999999999999.99" step="0.01" required value={amount} onChange={e=>(editing?setEditMonto:setMonto)(e.target.value)}/></label></div>
+      <div className="form-grid"><label className="field-label">Método de pago<select className="field" value={payment} onChange={e=>(editing?setEditMetodo:setMetodoPago)(e.target.value)}><option>Efectivo</option><option>Transferencia</option>{!['Efectivo','Transferencia'].includes(payment)&&<option>{payment}</option>}</select></label><label className="field-label">Categoría<input className="field" list="movement-categories" value={category} onChange={e=>(editing?setEditCategoria:setCategoria)(e.target.value)} placeholder="Elige o escribe una categoría"/><datalist id="movement-categories">{categoriasLista.map(c=><option key={c.id_categoria} value={c.nombre_categoria}/>)}</datalist></label></div>
+      <label className="field-label">Fecha de la operación<input className="field" type="date" min="1000-01-01" max={civilToday()} required value={date} onChange={e=>(editing?setEditFecha:setFechaOperacion)(e.target.value)}/></label>
+      <label className="field-label">Descripción<input className="field" required value={detail} onChange={e=>(editing?setEditDescripcion:setDescripcion)(e.target.value)} placeholder="Ej.: compra de mercado"/></label>
+      {!editing&&<p className="form-hint">Para planificar un pago futuro, crea una regla en <Link className="underline text-accent" href="/dashboard/recurrencias">Recurrencias</Link>.</p>}
+    </>;
+  }
+  const visible=movimientos.filter(m=>`${m.descripcion_detalle||''} ${m.categorias?.nombre_categoria||''} ${m.metodo_pago||''}`.toLowerCase().includes(searchTerm.toLowerCase()));
+  return <div className="space-y-6">
+    <header className="page-heading"><div><h1>Movimientos</h1><p>Lo que entra, lo que sale y la historia detrás de cada movimiento.</p></div><button className="button-primary" disabled={loading||!!loadError} onClick={()=>{setFormError('');setIsModalOpen(true);}}><Plus size={18}/>Nuevo movimiento</button></header>
+    {loadError&&<p role="alert" className="feedback error">{loadError}<button className="ml-3 underline" onClick={()=>void refreshData()}>Volver a cargar</button></p>}
+    <div className="panel flex flex-wrap items-center justify-between gap-4"><label className="flex w-full max-w-md items-center gap-3"><Search size={18} className="text-muted"/><span className="sr-only">Buscar movimientos</span><input className="field" type="search" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} placeholder="Buscar por descripción, categoría o método"/></label><span className="text-sm text-muted">{visible.length} movimiento(s)</span></div>
+    {loading?<p role="status" className="panel">Cargando tus movimientos…</p>:!loadError&&<div className="movement-list">
+      {!visible.length&&<div className="panel text-center"><ArrowLeftRight className="mx-auto mb-4 text-accent" size={28}/><h2 className="text-lg font-semibold">Tu historial empieza aquí</h2><p className="mt-2 text-sm text-muted">{searchTerm?'No hay resultados para esta búsqueda.':'Registra un ingreso o gasto para empezar a ver tus finanzas con claridad.'}</p></div>}
+      {visible.map(m=>{const sign=movementSign(m.id_tipo);return <article key={m.id_movimiento} className="movement-row"><time className="movement-date" dateTime={m.fecha_operacion.slice(0,10)}>{m.fecha_operacion.slice(0,10)}</time><div className="movement-detail"><strong>{m.descripcion_detalle||'Sin descripción'}</strong><p>{m.categorias?.nombre_categoria||'Sin categoría'} · {m.metodo_pago||'Sin método'}{m.id_ocurrencia?' · Recurrente':''}</p></div><span className={`movement-amount ${sign>0?'text-accent':sign<0?'text-danger':'text-muted'}`}>{sign>0?'+ ':sign<0?'− ':''}{formatAmount(m.monto_transaccion,currency)}</span><div className="movement-actions">{m.id_ocurrencia?<Link className="button-secondary" href="/dashboard/recurrencias">Gestionar</Link>:<><button className="icon-button" aria-label={`Editar ${m.descripcion_detalle||'movimiento'}`} onClick={()=>abrirEditar(m)}><Pencil size={17}/></button><button className="icon-button text-danger" aria-label={`Eliminar ${m.descripcion_detalle||'movimiento'}`} onClick={()=>handleEliminar(m)}><Trash2 size={17}/></button></>}</div></article>;})}
+    </div>}
+    {isModalOpen&&<Dialog title="Nuevo movimiento" description="Registra una operación que ya ocurrió." onClose={()=>setIsModalOpen(false)} busy={isSubmitting}>{formError&&<p role="alert" className="feedback error mb-4">{formError}</p>}<form onSubmit={handleGuardar}><fieldset disabled={isSubmitting} className="form-stack">{fields(false)}<div className="dialog-actions"><button className="button-secondary" type="button" onClick={()=>setIsModalOpen(false)}>Cancelar</button><button className="button-primary" type="submit">{isSubmitting?'Guardando…':'Guardar movimiento'}</button></div></fieldset></form></Dialog>}
+    {editMov&&<Dialog title="Editar movimiento" onClose={()=>setEditMov(null)} busy={isEditSubmitting}>{formError&&<p role="alert" className="feedback error mb-4">{formError}</p>}<form onSubmit={handleActualizar}><fieldset disabled={isEditSubmitting} className="form-stack">{fields(true)}<div className="dialog-actions"><button className="button-secondary" type="button" onClick={()=>setEditMov(null)}>Cancelar</button><button className="button-primary" type="submit">{isEditSubmitting?'Guardando…':'Guardar cambios'}</button></div></fieldset></form></Dialog>}
+    <ConfirmModal open={confirmOpen} busy={deleteBusy} error={deleteError} title="¿Eliminar este movimiento?" message="Se retirará de tu historial y se actualizará el saldo. Esta acción no se puede deshacer." confirmText="Sí, eliminar" onConfirm={confirmarEliminar} onCancel={cancelarEliminar}/>
+    <div className="fixed bottom-5 right-5 left-5 z-[400] ml-auto flex max-w-md flex-col gap-2">{toasts.map(t=><p key={t.id} role={t.type==='err'?'alert':'status'} className={t.type==='err'?'feedback error':'feedback'}>{t.msg}</p>)}</div>
+  </div>;
 }

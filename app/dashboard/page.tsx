@@ -1,224 +1,91 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import DashboardHeader from '@/components/DashboardHeader';
+import CategoryChart from '@/components/CategoryChart';
 import { supabase } from '@/lib/supabase';
+import { createFinanceReader } from '@/lib/finance-data';
+import { civilToday, civilToDate, formatAmount, movementSign, readAllPages, summarizeMovements } from '@/lib/finance';
+import { budgetProgress } from '@/lib/planning';
+import type { Row } from '@/lib/database.types';
+import type { Movement, Profile } from '@/lib/finance';
 import { useRouter } from 'next/navigation';
-import { Activity, Plus, TrendingUp, TrendingDown, CreditCard, ArrowLeftRight } from 'lucide-react';
+import { Activity, Plus, TrendingUp, TrendingDown, ArrowLeftRight } from 'lucide-react';
 import Link from 'next/link';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, LabelList } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
+const reader = createFinanceReader(supabase);
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [userData, setUserData] = useState({
-    nickname: "Cargando...",
-    saldo: 0,
-    moneda: "...",
-    avatarUrl: ""
-  });
-  
-  const [stats, setStats] = useState({
-    ingresoMensual: 0,
-    gastoMensual: 0,
-  });
-  
-  const [allMovs, setAllMovs] = useState<any[]>([]);
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [recentMoves, setRecentMoves] = useState<any[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [allMovs, setAllMovs] = useState<Movement[]>([]);
+  const [budgets, setBudgets] = useState<Row<'presupuestos_mensuales'>[]>([]);
   const [loading, setLoading] = useState(true);
-  const syncLock = useRef(false);
-  
-  // Selector dinámico de Fechas
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [loadError, setLoadError] = useState('');
+  const [selectedDate, setSelectedDate] = useState(() => civilToDate(civilToday()));
 
-  // Generador de meses pasados (ej. últimos 6 meses hasta el actual)
-  const monthOptions = [];
-  const start = new Date();
-  for(let i=0; i<6; i++) {
-     monthOptions.push(new Date(start.getFullYear(), start.getMonth() - i, 1));
-  }
+  const current = civilToDate(civilToday());
+  const monthOptions = Array.from({ length: 6 }, (_, index) =>
+    new Date(current.getFullYear(), current.getMonth() - index, 1));
 
-  // 1. Carga inicial gruesa desde Base de Datos
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session) return router.push("/login");
-
-      const { data: profileData } = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('id_usuario', session.user.id)
-        .single();
-
-      let { data: movData } = await supabase
-        .from('movimientos')
-        .select('id_movimiento, monto_transaccion, fecha_operacion, id_tipo, descripcion_detalle, id_categoria, es_automatico, categorias(nombre_categoria)')
-        .eq('id_usuario', session.user.id)
-        .order('fecha_operacion', { ascending: false });
-
-      // -- AUTO REPARACIÓN DE DUPLICADOS (Por Strict Mode) --
-      if (movData) {
-          const vistasFix = new Set();
-          const toDelete: string[] = [];
-          movData.forEach(m => {
-              if (m.es_automatico) {
-                  const key = m.fecha_operacion.split('T')[0] + '_' + m.id_categoria;
-                  if (vistasFix.has(key)) {
-                      toDelete.push(m.id_movimiento);
-                  } else {
-                      vistasFix.add(key);
-                  }
-              }
-          });
-          if (toDelete.length > 0) {
-              await supabase.from('movimientos').delete().in('id_movimiento', toDelete);
-              movData = movData.filter(m => !toDelete.includes(m.id_movimiento));
-          }
+    let active = true;
+    async function load() {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw new Error('No se pudo comprobar tu sesión.');
+        if (!session) { router.replace('/login'); return; }
+        const [userProfile, movements, budgets] = await Promise.all([
+          reader.profile(session.user.id), reader.movements(session.user.id),
+          readAllPages(async(from,to)=>{
+            const {data,error}=await supabase.from('presupuestos_mensuales').select('*').eq('id_usuario',session.user.id).order('id_presupuesto').range(from,to);
+            if(error||!data)throw new Error('No se pudieron cargar las alertas de presupuesto.');
+            return data;
+          }),
+        ]);
+        if (active) { setProfile(userProfile); setAllMovs(movements); setBudgets(budgets); }
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar tus datos.');
+      } finally {
+        if (active) setLoading(false);
       }
-
-      // -- MOTOR DE SINCRONIZACIÓN AUTOMÁTICA (Opción B) --
-      const { data: recData } = await supabase.from('config_recurrencias').select('*').eq('id_usuario', session.user.id).eq('estado_activo', true);
-      
-      let newMovs: any[] = [];
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-
-      if (recData && movData && !syncLock.current) {
-          syncLock.current = true;
-          recData.forEach(rec => {
-             const expectedDates: Date[] = [];
-             const inicio = new Date(rec.fecha_inicio + "T00:00:00");
-             
-             if (rec.frecuencia === 'Mensual') {
-                 let loopDate = new Date(inicio.getFullYear(), inicio.getMonth(), 1);
-                 while(loopDate <= today) {
-                     let lastDayOfMonth = new Date(loopDate.getFullYear(), loopDate.getMonth() + 1, 0).getDate();
-                     let targetDay = rec.dia_ejecucion > lastDayOfMonth ? lastDayOfMonth : rec.dia_ejecucion;
-                     const tempDate = new Date(loopDate.getFullYear(), loopDate.getMonth(), targetDay);
-                     
-                     if (tempDate >= inicio && tempDate <= today) {
-                         expectedDates.push(new Date(tempDate));
-                     }
-                     loopDate = new Date(loopDate.getFullYear(), loopDate.getMonth() + 1, 1);
-                 }
-             } else if (rec.frecuencia === 'Semanal') {
-                 let current = new Date(inicio.getTime());
-                 while(current <= today) {
-                     expectedDates.push(new Date(current.getTime()));
-                     current.setDate(current.getDate() + 7);
-                 }
-             } else if (rec.frecuencia === 'Diario') {
-                 let current = new Date(inicio.getTime());
-                 while(current <= today) {
-                     expectedDates.push(new Date(current.getTime()));
-                     current.setDate(current.getDate() + 1);
-                 }
-             }
-
-             expectedDates.forEach(expDate => {
-                 const expString = expDate.toISOString().split('T')[0];
-                 const exists = movData!.some(mov => {
-                     // Solo comparar si tienen categoría. (Prevenir falsos positivos con manuales sin cat.)
-                     if (!mov.id_categoria || mov.id_categoria !== rec.id_categoria) return false;
-                     const movDateString = mov.fecha_operacion.split('T')[0];
-                     return movDateString === expString;
-                 });
-
-                 if (!exists) {
-                     newMovs.push({
-                         id_usuario: session.user.id,
-                         id_tipo: rec.id_tipo,
-                         id_categoria: rec.id_categoria,
-                         monto_transaccion: rec.monto_recurrente,
-                         metodo_pago: "Robot IA",
-                         fecha_operacion: expString,
-                         descripcion_detalle: "Automatización Sistema",
-                         es_automatico: true
-                     });
-                 }
-             });
-          });
-
-          if (newMovs.length > 0) {
-              const { error: insErr } = await supabase.from('movimientos').insert(newMovs);
-              if (!insErr) {
-                  // Refrescar movimientos ya con el nuevo historial cargado
-                  const { data: updatedMovData } = await supabase
-                      .from('movimientos')
-                      .select('id_movimiento, monto_transaccion, fecha_operacion, id_tipo, descripcion_detalle, id_categoria, es_automatico, categorias(nombre_categoria)')
-                      .eq('id_usuario', session.user.id)
-                      .order('fecha_operacion', { ascending: false });
-                  if (updatedMovData) movData = updatedMovData;
-              }
-          }
-      }
-      // -- FIN MOTOR SINC --
-
-      if (profileData) {
-        setUserData({
-          nickname: profileData.username || profileData.nombre_completo,
-          saldo: 0, // Se calcula después
-          moneda: profileData.codigo_moneda,
-          avatarUrl: profileData.url_avatar
-        });
-        setAllMovs(movData || []);
-      }
-      setLoading(false);
-    };
-    fetchDashboardData();
+    }
+    void load();
+    return () => { active = false; };
   }, [router]);
 
-  // 2. Acumuladores Reactivos: Detectan el Mes Seleccionado
-  useEffect(() => {
-    if (allMovs.length === 0 && loading) return;
-
-    let saldoCalculado = 0;
-    let ingMes = 0;
-    let gasMes = 0;
-
-    const currentMonth = selectedDate.getMonth();
-    const currentYear = selectedDate.getFullYear();
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-
-    let monthChart: any[] = [];
-    for (let i = 1; i <= daysInMonth; i++) {
-      monthChart.push({ date: i, Ingresos: 0, Egresos: 0 });
+  const computed = useMemo(() => {
+    try {
+      const alerts=budgets.filter(b=>b.anio_calendario===selectedDate.getFullYear()&&b.mes_calendario===selectedDate.getMonth()+1)
+        .map(b=>budgetProgress(b,allMovs)).filter(p=>p.status!=='normal');
+      return { summary: summarizeMovements(allMovs, selectedDate.getFullYear(), selectedDate.getMonth()), alerts, error: '' };
+    } catch (error) {
+      return { summary: null, alerts: [], error: error instanceof Error ? error.message : 'No se pudieron calcular los totales.' };
     }
-
-    allMovs.forEach((mov) => {
-      const [year, month, day] = mov.fecha_operacion.split('T')[0].split('-');
-      const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      const isSelectedMonth = date.getMonth() === currentMonth && date.getFullYear() === currentYear;
-      
-      // Saldo Histórico Vitalicio (Siempre es la suma total de todo el historial del usuario)
-      if (mov.id_tipo === 1) saldoCalculado += Number(mov.monto_transaccion);
-      else if (mov.id_tipo === 2) saldoCalculado -= Number(mov.monto_transaccion);
-
-      // Desglose Local del Mes Escogido en la UI
-      if (isSelectedMonth) {
-        if (mov.id_tipo === 1) { 
-            ingMes += Number(mov.monto_transaccion);
-            monthChart[date.getDate() - 1].Ingresos += Number(mov.monto_transaccion);
-        } else if (mov.id_tipo === 2) { 
-            gasMes += Number(mov.monto_transaccion);
-            monthChart[date.getDate() - 1].Egresos += Number(mov.monto_transaccion);
-        }
-      }
-    });
-
-    setStats({ ingresoMensual: ingMes, gastoMensual: gasMes });
-    setChartData(monthChart);
-    // Para simplificar, recentMoves sigue siendo de manera absoluta los 4 más recientes
-    setRecentMoves(allMovs.slice(0, 4));
-    setUserData(prev => ({ ...prev, saldo: saldoCalculado }));
-
-  }, [selectedDate, allMovs, loading]);
+  }, [allMovs, selectedDate, budgets]);
+  const summary = computed.summary;
+  if (!loading && (loadError || computed.error || !profile || !summary)) {
+    return <div role="alert" className="text-danger p-6 border border-danger/30 rounded-2xl">
+      {loadError || computed.error || 'No se pudo cargar el perfil.'}
+      <button className="block mt-4 underline" onClick={() => window.location.reload()}>Volver a cargar</button>
+    </div>;
+  }
+  const userData = {
+    nickname: profile?.username || profile?.nombre_completo || '',
+    saldo: (summary?.balanceCents ?? 0) / 100,
+    moneda: profile?.codigo_moneda || 'COP',
+    avatarUrl: profile?.url_avatar || '',
+  };
+  const stats = { ingresoMensual: (summary?.incomeCents ?? 0) / 100, gastoMensual: (summary?.expenseCents ?? 0) / 100 };
+  const chartData = summary?.chartData ?? [];
+  const recentMoves = allMovs.slice(0, 4);
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full min-h-[50vh] text-[#39FF14] font-mono tracking-widest animate-pulse gap-4">
+      <div className="flex flex-col items-center justify-center h-full min-h-[50vh] text-accent tabular-nums tracking-normal animate-pulse gap-4">
         <Activity size={40} />
-        <span>SINCRONIZANDO SISTEMA...</span>
+        <span>Cargando tus finanzas...</span>
       </div>
     );
   }
@@ -232,22 +99,30 @@ export default function DashboardPage() {
         avatarUrl={userData.avatarUrl}
       />
       
+      <p className="text-sm text-muted mb-6">
+        Tu saldo incluye solo movimientos confirmados. En Recurrencias puedes revisar pendientes, confirmar pagos o cobros y consultar su historial.
+      </p>
+
       {/* Cards de Métricas Rápidas conectadas a Supabase */}
+      {computed.alerts.length>0&&<p role="status" className="mb-6 rounded-xl border border-amber-600/40 p-4 text-warning">
+        {computed.alerts.length} presupuesto(s) alcanzaron su umbral de alerta en {selectedDate.toLocaleDateString('es-CO',{month:'long',year:'numeric'})}.
+        {' '}<Link className="underline" href={`/dashboard/presupuestos?mes=${selectedDate.getFullYear()}-${String(selectedDate.getMonth()+1).padStart(2,'0')}`}>Revisar presupuestos</Link>
+      </p>}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         {[
-          { title: "INGRESO MENSUAL", amount: `+$${stats.ingresoMensual.toLocaleString()}`, icon: TrendingUp, color: "text-[#39FF14]" },
-          { title: "GASTO MENSUAL", amount: `-$${stats.gastoMensual.toLocaleString()}`, icon: TrendingDown, color: "text-[#ff3939]" },
-          { title: "TARJETAS", amount: "0 Activas", icon: CreditCard, color: "text-zinc-300" }
+          { title: "INGRESO MENSUAL", amount: formatAmount(stats.ingresoMensual, userData.moneda), icon: TrendingUp, color: "text-accent" },
+          { title: "GASTO MENSUAL", amount: formatAmount(stats.gastoMensual, userData.moneda), icon: TrendingDown, color: "text-danger" },
+          { title: "BALANCE DEL MES", amount: formatAmount(((summary?.incomeCents ?? 0) - (summary?.expenseCents ?? 0)) / 100, userData.moneda), icon: ArrowLeftRight, color: "text-muted" }
         ].map((stat, i) => (
-          <div key={i} className="bg-[#09090b] p-6 rounded-3xl border border-zinc-800/50 hover:border-zinc-700 transition-colors group relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-1 h-full bg-zinc-800 group-hover:bg-[#39FF14] transition-colors duration-300"></div>
+          <div key={i} className="bg-surface p-6 rounded-3xl border border-line/50 hover:border-line transition-colors group relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 h-full bg-soft group-hover:bg-accent transition-colors duration-300"></div>
             <div className="flex justify-between items-start mb-4 ml-2">
-              <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{stat.title}</span>
-              <div className="p-2 bg-zinc-900 rounded-xl group-hover:bg-zinc-800 transition-colors">
+              <span className="text-xs text-muted font-bold  tracking-normal">{stat.title}</span>
+              <div className="p-2 bg-paper rounded-xl group-hover:bg-soft transition-colors">
                 <stat.icon size={18} className={stat.color} />
               </div>
             </div>
-            <p className={`text-3xl font-black tracking-tight ml-2 ${stat.color}`}>{stat.amount}</p>
+            <p className={`text-3xl font-semibold tracking-tight ml-2 ${stat.color}`}>{stat.amount}</p>
           </div>
         ))}
       </div>
@@ -256,10 +131,10 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* Gráfico principal de Flujo */}
-        <div className="lg:col-span-2 bg-[#09090b] rounded-3xl border border-zinc-800/50 p-8 relative overflow-hidden flex flex-col min-h-[400px] shadow-2xl">
+        <div className="lg:col-span-2 bg-surface rounded-3xl border border-line/50 p-8 relative overflow-hidden flex flex-col min-h-[400px] shadow-sm">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
-              <Activity size={18} className="text-[#39FF14]" />
+            <h2 className="text-sm font-bold text-ink  tracking-normal flex items-center gap-2">
+              <Activity size={18} className="text-accent" />
               Rendimiento Operativo
             </h2>
             
@@ -270,10 +145,10 @@ export default function DashboardPage() {
                 const [y, m] = e.target.value.split('-');
                 setSelectedDate(new Date(parseInt(y), parseInt(m), 1));
               }}
-              className="bg-zinc-900 text-zinc-300 border border-zinc-800 text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-xl outline-none focus:border-[#39FF14] transition-colors"
+              className="bg-paper text-muted border border-line text-xs font-bold  tracking-normal px-4 py-2 rounded-xl outline-none focus:border-accent transition-colors"
             >
               {monthOptions.map(m => {
-                const text = m.getTime() === new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() ? "Este Mes" : 
+                const text = m.getFullYear() === current.getFullYear() && m.getMonth() === current.getMonth() ? "Este Mes" :
                              new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(m);
                 return (
                   <option key={m.getTime()} value={`${m.getFullYear()}-${m.getMonth()}`}>
@@ -289,48 +164,49 @@ export default function DashboardPage() {
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#39FF14" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#39FF14" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#226c5d" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#226c5d" stopOpacity={0}/>
                   </linearGradient>
                   <linearGradient id="colorEgresos" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ff3939" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#ff3939" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#a44841" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#a44841" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e1e7dc" />
                 <XAxis 
                     dataKey="date" 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'monospace' }}
+                    tick={{ fill: '#71717a', fontSize: 12, fontFamily: 'monospace' }}
                     tickFormatter={(value) => `${value}`}
                     dy={10}
                 />
                 <YAxis 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fill: '#71717a', fontSize: 10, fontFamily: 'monospace' }}
-                    tickFormatter={(value) => `$${value >= 1000 ? (value/1000) + 'k' : value}`}
+                    tick={{ fill: '#71717a', fontSize: 12, fontFamily: 'monospace' }}
+                    tickFormatter={(value) => Number(value).toLocaleString('es-CO')}
                 />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#09090b', borderColor: '#27272a', borderRadius: '12px', fontFamily: 'monospace', fontSize: '12px' }}
+                  contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e1e7dc', borderRadius: '12px', fontFamily: 'monospace', fontSize: '12px' }}
                   itemStyle={{ fontWeight: 'bold' }}
-                  labelStyle={{ color: '#a1a1aa', marginBottom: '8px' }}
+                  labelStyle={{ color: '#66765e', marginBottom: '8px' }}
+                  formatter={value => formatAmount(Number(value), userData.moneda)}
                   labelFormatter={(label) => `Día ${label}`}
                   cursor={{ stroke: '#3f3f46', strokeWidth: 1, strokeDasharray: '4 4' }}
                 />
-                <Area type="monotone" dataKey="Ingresos" stroke="#39FF14" strokeWidth={3} fillOpacity={1} fill="url(#colorIngresos)" activeDot={{ r: 6, fill: '#39FF14', stroke: '#09090b', strokeWidth: 2 }} />
-                <Area type="monotone" dataKey="Egresos" stroke="#ff3939" strokeWidth={3} fillOpacity={1} fill="url(#colorEgresos)" activeDot={{ r: 6, fill: '#ff3939', stroke: '#09090b', strokeWidth: 2 }} />
+                <Area type="monotone" dataKey="Ingresos" stroke="#226c5d" strokeWidth={3} fillOpacity={1} fill="url(#colorIngresos)" activeDot={{ r: 6, fill: '#226c5d', stroke: '#ffffff', strokeWidth: 2 }} />
+                <Area type="monotone" dataKey="Egresos" stroke="#a44841" strokeWidth={3} fillOpacity={1} fill="url(#colorEgresos)" activeDot={{ r: 6, fill: '#a44841', stroke: '#ffffff', strokeWidth: 2 }} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* Panel lateral derecho (Movimientos Recientes Reales) */}
-        <div className="bg-[#09090b] rounded-3xl border border-zinc-800/50 p-6 flex flex-col min-h-[400px] shadow-2xl">
+        <div className="bg-surface rounded-3xl border border-line/50 p-6 flex flex-col min-h-[400px] shadow-sm">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-sm font-bold text-white uppercase tracking-widest">Recientes</h2>
-            <Link href="/dashboard/movimientos" className="text-[#39FF14] hover:bg-[#39FF14]/10 p-2 rounded-xl transition-colors">
+            <h2 className="text-sm font-bold text-ink  tracking-normal">Recientes</h2>
+            <Link href="/dashboard/movimientos" className="text-accent hover:bg-accent/10 p-2 rounded-xl transition-colors">
               <Plus size={20} />
             </Link>
           </div>
@@ -338,30 +214,31 @@ export default function DashboardPage() {
           <div className="flex-1 flex flex-col gap-3">
             {recentMoves.length === 0 ? (
               <div className="flex-1 flex flex-col justify-center items-center text-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-                  <ArrowLeftRight size={24} className="text-zinc-600" />
+                <div className="w-16 h-16 rounded-full bg-paper border border-line flex items-center justify-center">
+                  <ArrowLeftRight size={24} className="text-muted" />
                 </div>
                 <div>
-                  <p className="text-zinc-300 font-medium text-sm">Sin movimientos</p>
-                  <p className="text-zinc-600 text-[10px] mt-1 uppercase tracking-widest">Aún no hay actividad monetaria</p>
+                  <p className="text-muted font-medium text-sm">Sin movimientos</p>
+                  <p className="text-muted text-xs mt-1  tracking-normal">Aún no hay actividad monetaria</p>
                 </div>
-                <Link href="/dashboard/movimientos" className="mt-4 px-6 py-3 bg-[#39FF14] text-black font-bold uppercase tracking-widest text-[11px] rounded-xl hover:bg-[#a3e635] transition-all hover:shadow-[0_0_20px_rgba(57,255,20,0.3)] hover:-translate-y-0.5 inline-block text-center">
+                <Link href="/dashboard/movimientos" className="mt-4 px-6 py-3 bg-accent text-white font-bold  tracking-normal text-xs rounded-xl hover:bg-accent transition-all  hover:-translate-y-0.5 inline-block text-center">
                   Añadir Transacción
                 </Link>
               </div>
             ) : (
               <div className="flex flex-col gap-3">
                 {recentMoves.map((mov) => {
-                  const isIngreso = mov.id_tipo === 1;
+                  const sign = movementSign(mov.id_tipo);
+                  const isIngreso = sign > 0;
                   return (
-                    <div key={mov.id_movimiento} className="flex justify-between items-center p-3 rounded-xl bg-zinc-900/50 border border-zinc-800/50 hover:bg-zinc-800/50 transition-colors">
+                    <div key={mov.id_movimiento} className="flex justify-between items-center p-3 rounded-xl bg-paper/50 border border-line/50 hover:bg-soft/50 transition-colors">
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${isIngreso ? 'bg-[#39FF14]/10 text-[#39FF14]' : 'bg-[#ff3939]/10 text-[#ff3939]'}`}>
+                        <div className={`p-2 rounded-lg ${isIngreso ? 'bg-accent/10 text-accent' : 'bg-danger/10 text-danger'}`}>
                           {isIngreso ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-zinc-300">{mov.descripcion_detalle || 'Operación'}</p>
-                          <p className="text-[9px] text-zinc-500 font-mono tracking-widest uppercase mt-0.5">
+                          <p className="text-xs font-bold text-muted">{mov.descripcion_detalle || 'Operación'}</p>
+                          <p className="text-xs text-muted tabular-nums tracking-normal  mt-0.5">
                             {(() => {
                               const [y, m, d] = mov.fecha_operacion.split('T')[0].split('-');
                               return new Date(parseInt(y), parseInt(m) - 1, parseInt(d)).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
@@ -369,8 +246,8 @@ export default function DashboardPage() {
                           </p>
                         </div>
                       </div>
-                      <span className={`text-sm font-black font-mono tracking-tight ${isIngreso ? 'text-[#39FF14]' : 'text-white'}`}>
-                        {isIngreso ? '+' : '-'}${mov.monto_transaccion.toLocaleString()}
+                      <span className={`text-sm font-semibold tabular-nums tracking-tight ${isIngreso ? 'text-accent' : 'text-ink'}`}>
+                        {sign > 0 ? '+' : sign < 0 ? '-' : ''}{formatAmount(mov.monto_transaccion, userData.moneda)}
                       </span>
                     </div>
                   );
@@ -379,7 +256,7 @@ export default function DashboardPage() {
             )}
             
             {recentMoves.length > 0 && (
-              <Link href="/dashboard/movimientos" className="mt-auto pt-4 border-t border-zinc-800/50 text-center block text-[10px] font-bold text-[#39FF14] uppercase tracking-widest hover:text-white transition-colors">
+              <Link href="/dashboard/movimientos" className="mt-auto pt-4 border-t border-line/50 text-center block text-xs font-bold text-accent  tracking-normal hover:text-ink transition-colors">
                 Ver todos los movimientos &rarr;
               </Link>
             )}
@@ -388,169 +265,12 @@ export default function DashboardPage() {
         
       </div>
 
-      {/* ══════════════════════════════════════════════
-          SECCIÓN: Análisis por Categoría
-          Datos derivados de allMovs + selectedDate
-          Sin nuevas consultas a Supabase
-      ══════════════════════════════════════════════ */}
-      {(() => {
-        const currentMonth = selectedDate.getMonth();
-        const currentYear  = selectedDate.getFullYear();
-
-        // Filtrar movimientos del mes seleccionado
-        const movsDelMes = allMovs.filter(mov => {
-          const [y, m] = mov.fecha_operacion.split('T')[0].split('-');
-          return parseInt(m) - 1 === currentMonth && parseInt(y) === currentYear;
-        });
-
-        // Agrupar por categoría: acumula montos
-        function agrupar(tipo: number) {
-          const mapa: Record<string, number> = {};
-          movsDelMes
-            .filter(m => m.id_tipo === tipo)
-            .forEach(m => {
-              const cat = m.categorias?.nombre_categoria ?? 'Sin categoría';
-              mapa[cat] = (mapa[cat] ?? 0) + Number(m.monto_transaccion);
-            });
-          const total = Object.values(mapa).reduce((a, b) => a + b, 0);
-          return Object.entries(mapa)
-            .map(([name, value]) => ({
-              name,
-              value,
-              pct: total > 0 ? Math.round((value / total) * 100) : 0,
-            }))
-            .sort((a, b) => b.value - a.value);
-        }
-
-        const gastosCat  = agrupar(2);
-        const ingresosCat = agrupar(1);
-
-        // Tooltip personalizado reutilizable
-        const CustomTooltip = ({ active, payload }: any) => {
-          if (!active || !payload?.length) return null;
-          const d = payload[0].payload;
-          return (
-            <div className="bg-[#09090b] border border-zinc-800 rounded-xl px-4 py-3 text-xs font-mono shadow-2xl">
-              <p className="text-zinc-400 mb-1 uppercase tracking-widest">{d.name}</p>
-              <p className="font-black text-white">${d.value.toLocaleString()}</p>
-              <p className="text-zinc-500">{d.pct}% del total</p>
-            </div>
-          );
-        };
-
-        // Tarjeta individual de categoría
-        function TarjetaCategoria({
-          titulo, datos, colorBarra, colorTexto, msgVacio
-        }: {
-          titulo: string;
-          datos: { name: string; value: number; pct: number }[];
-          colorBarra: string;
-          colorTexto: string;
-          msgVacio: string;
-        }) {
-          return (
-            <div className="bg-[#09090b] border border-zinc-800/50 rounded-3xl p-6 shadow-2xl relative overflow-hidden flex flex-col gap-4">
-              <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent" />
-              <h3 className="text-sm font-black text-white uppercase tracking-widest">{titulo}</h3>
-
-              {datos.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 gap-2">
-                  <p className="text-zinc-600 font-mono text-[10px] uppercase tracking-widest text-center">{msgVacio}</p>
-                </div>
-              ) : (
-                <>
-                  {/* Gráfico horizontal */}
-                  <div className="w-full" style={{ height: Math.max(120, datos.length * 44) }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={datos}
-                        layout="vertical"
-                        margin={{ top: 0, right: 16, left: 0, bottom: 0 }}
-                      >
-                        <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="#27272a" />
-                        <XAxis
-                          type="number"
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: '#52525b', fontSize: 9, fontFamily: 'monospace' }}
-                          tickFormatter={v => `$${v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v}`}
-                        />
-                        <YAxis
-                          type="category"
-                          dataKey="name"
-                          width={90}
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: '#a1a1aa', fontSize: 10, fontFamily: 'monospace' }}
-                          tickFormatter={v => v.length > 10 ? v.substring(0, 9) + '…' : v}
-                        />
-                        <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={20}>
-                          {datos.map((_, idx) => (
-                            <Cell key={idx} fill={colorBarra} fillOpacity={1 - idx * 0.12} />
-                          ))}
-                          <LabelList
-                            dataKey="pct"
-                            position="right"
-                            style={{ fill: colorTexto, fontSize: 9, fontFamily: 'monospace', fontWeight: 700 }}
-                            formatter={(v: number) => `${v}%`}
-                          />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  {/* Lista resumen */}
-                  <div className="flex flex-col gap-1.5 mt-1">
-                    {datos.map((d, i) => (
-                      <div key={i} className="flex justify-between items-center text-[10px] font-mono py-1 border-b border-zinc-800/40 last:border-0">
-                        <span className="text-zinc-400 truncate max-w-[55%]" title={d.name}>{d.name}</span>
-                        <span className="font-black" style={{ color: colorTexto }}>
-                          ${d.value.toLocaleString()} · {d.pct}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          );
-        }
-
-        return (
-          <div className="mt-8">
-            {/* Encabezado de sección */}
-            <div className="mb-6">
-              <h2 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#39FF14] inline-block shadow-[0_0_8px_rgba(57,255,20,0.8)]" />
-                Análisis por Categoría
-              </h2>
-              <p className="text-zinc-500 font-mono text-[10px] uppercase tracking-widest mt-1 ml-4">
-                Distribución de ingresos y egresos del mes seleccionado
-              </p>
-            </div>
-
-            {/* Grid de dos tarjetas */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <TarjetaCategoria
-                titulo="Gastos por Categoría"
-                datos={gastosCat}
-                colorBarra="#ff3939"
-                colorTexto="#ff6b6b"
-                msgVacio="No hay egresos registrados en este periodo."
-              />
-              <TarjetaCategoria
-                titulo="Ingresos por Categoría"
-                datos={ingresosCat}
-                colorBarra="#39FF14"
-                colorTexto="#39FF14"
-                msgVacio="No hay ingresos registrados en este periodo."
-              />
-            </div>
-          </div>
-        );
-      })()}
-
+      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <CategoryChart title="Gastos por categoría" data={summary?.expenseCategories ?? []}
+          color="#a44841" currency={userData.moneda} emptyMessage="Sin gastos en este mes." />
+        <CategoryChart title="Ingresos por categoría" data={summary?.incomeCategories ?? []}
+          color="#226c5d" currency={userData.moneda} emptyMessage="Sin ingresos en este mes." />
+      </div>
     </div>
   );
 }

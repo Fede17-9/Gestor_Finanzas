@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# Preserve the original historical snapshots byte for byte.
+docs/referencia/base_de_datos.txt -text -whitespace
+docs/referencia/historial_desarrollo.md -text -whitespace
