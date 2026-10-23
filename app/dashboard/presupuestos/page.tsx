@@ -9,7 +9,7 @@ import {amountToCents,centsToDecimal,civilToday,monthKey} from '@/lib/finance';
 import type {Row} from '@/lib/database.types';
 import Dialog from '@/components/ui/Dialog';
 import ConfirmModal from '@/components/ConfirmModal';
-import s from '@/components/budget-preview/BudgetPreview.module.css';
+import s from './Presupuestos.module.css';
 
 type Budget=Row<'presupuestos_mensuales'>;
 export default function PresupuestosPage(){return <Suspense fallback={<p className="p-6 text-muted">Cargando presupuestos…</p>}><Content/></Suspense>;}

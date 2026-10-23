@@ -1,100 +1,71 @@
-# Flux · Gestor de Finanzas
+# Flux · Gestor de finanzas
 
-Aplicación web personal para registrar ingresos y gastos, consultar el flujo mensual, proyectar operaciones recurrentes y llevar metas de ahorro. Está construida con Next.js, TypeScript y Supabase.
+Aplicación personal para registrar ingresos y gastos, planificar recurrencias, consultar un calendario, controlar presupuestos mensuales y reservar dinero para metas de ahorro.
 
-El proyecto está en fase de **MVP en desarrollo**. El objetivo es terminar un registro financiero personal confiable y publicar una demostración con datos ficticios que pueda probarse desde el portafolio. Cada usuario gestionará sus datos privados, sin relaciones entre usuarios ni finanzas compartidas. La dirección visual acordada es una identidad sobria, tomando PliP como referencia; la interfaz actual conserva el estilo oscuro con acentos verdes.
+Cada cuenta mantiene sus datos privados. La interfaz está en español y usa una presentación clara, sobria y adaptable a móvil.
 
-## Estado al 20 de octubre de 2026
+## Estado
 
-Supabase **ya está integrado** para autenticación y datos. La primera entrega de integridad y la implementación local de acceso privado están aplicadas:
+Las fases de integridad, autenticación y seguridad, recurrencias, presupuestos/metas y diseño están implementadas. El propietario probó los flujos principales contra su Supabase, incluidos confirmación de correo, recuperación de contraseña, aislamiento entre cuentas y procesamiento programado.
 
-- Dashboard y calendario consultan datos sin crear ni borrar movimientos al cargar.
-- Los gastos legítimos con igual categoría/importe/fecha se conservan.
-- Importes calculados en centavos y validados; fecha «hoy» de Bogotá; proyecciones con vigencia y frecuencias coherentes.
-- Historial paginado y errores visibles, sin presentar totales parciales como si fueran completos.
-- Registro con confirmación de correo, recuperación de contraseña y completar perfil; dashboard protegido antes de montar sus pantallas.
-- Migraciones transaccionales, permisos por propietario y pruebas de aislamiento en PostgreSQL local, pendientes de contrastar/aplicar en Supabase remoto.
-- **48 pruebas, TypeScript, lint sin errores/advertencias y build aprobados.** CI preparado para GitHub Actions.
+El proyecto está preparando su beta de portafolio. El destino acordado es Vercel Hobby para la web y Supabase para autenticación y base de datos. La configuración pública, los textos de privacidad, la autorización de tratamiento y la atención de solicitudes de usuarios siguen pendientes antes de abrir el registro a evaluadores.
 
-El registro automático anterior se retiró. Las reglas se muestran como proyecciones separadas de las operaciones registradas; las ocurrencias pendientes y confirmaciones configurables se construirán en la etapa 3.
-
-Aún faltan inspección, respaldo y validación de migraciones/RLS/Auth en Supabase remoto, presupuestos, historial de aportes a metas, presentación móvil y beta. Cambiar la moneda sin conversión está bloqueado; se selecciona al registrarse. La portada `/` dirige al acceso.
-
-Consulta [primera entrega](docs/ETAPA_1.md), [segunda entrega y pendientes remotos](docs/ETAPA_2.md) y [validación actual](docs/VALIDACION.md). El [diagnóstico inicial](docs/ESTADO_PROYECTO.md) se conserva como fotografía anterior a las correcciones. Ningún dato remoto se modificó durante esta implementación.
+- Los saldos cuentan movimientos confirmados. Los pendientes y previsiones no registran pagos.
+- Cada regla recurrente admite confirmación manual o automática. Supabase Cron procesa las automáticas cuando la web está cerrada.
+- Los presupuestos cuentan egresos confirmados del mes; los límites de categoría no se suman al general.
+- Los aportes a metas reservan dinero y conservan historial: no crean gastos ni modifican el saldo general.
+- La moneda base se elige al crear el perfil y queda fija.
 
 ## Tecnología
 
-- Next.js 16.4.2 con App Router y React 19.2.3.
-- TypeScript y Tailwind CSS 4.
-- Supabase Auth y PostgreSQL; acceso desde el navegador mediante `lib/supabase.ts`.
-- Recharts para gráficos y Lucide para iconos.
-
-El proyecto requiere **Node.js 24.x**, declarado en `engines` y `.nvmrc`; se validó con 24.19.0. Las pruebas usan el runner nativo de Node y PGlite para PostgreSQL local en memoria, solo en desarrollo. Versiones y scripts en [package.json](package.json), resolución en `package-lock.json`.
+Next.js 16.4.2, React 19, TypeScript, Tailwind CSS 4, Supabase, Recharts y Lucide. Node.js 24.x, indicado en `.nvmrc` y `package.json`.
 
 ## Ejecutar en local
 
-Conserva la configuración de tu Supabase existente. Para verificar cambios de esquema y envíos de formularios, usa un entorno de pruebas con datos ficticios. Dashboard y calendario son de solo lectura; crear, editar o eliminar desde formularios sigue modificando el Supabase configurado.
-
-Desde la raíz del repositorio, donde está `package.json`, instala las dependencias y crea el archivo local de configuración solo si todavía no existe:
+Desde esta carpeta, donde está `package.json`:
 
 ```powershell
 npm ci
 if (-not (Test-Path -LiteralPath .env.local)) {
   Copy-Item -LiteralPath .env.example -Destination .env.local
 }
+npm run dev
 ```
 
-Configura en `.env.local` estas variables con los valores de tu proyecto de pruebas:
+Antes de arrancar por primera vez, configura en `.env.local`:
 
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 ```
 
-El nombre heredado `NEXT_PUBLIC_SUPABASE_ANON_KEY` sigue funcionando para tu configuración existente. La clave publishable tiene prioridad si se configuran ambas. Usa una clave pública apta para navegador; nunca una clave secreta o `service_role`. Los datos deben protegerse mediante políticas RLS comprobadas en Supabase.
+La variable heredada `NEXT_PUBLIC_SUPABASE_ANON_KEY` sigue siendo compatible. Las claves publicables son para el navegador y requieren RLS; nunca uses claves secretas ni `service_role` en estas variables.
 
-El esquema histórico está en [Referencia de la base de datos](docs/referencia/base_de_datos.txt). Las migraciones y el procedimiento seguro están en [supabase/README.md](supabase/README.md). No ejecutes la baseline sobre tu base existente: primero inspección, respaldo y comparación en una copia. La configuración de URLs y correo de Auth se detalla en [ETAPA_2.md](docs/ETAPA_2.md).
-
-Después inicia el servidor:
-
-```powershell
-npm run dev
-```
-
-Abre [http://localhost:3000/login](http://localhost:3000/login) o [http://localhost:3000/registro](http://localhost:3000/registro). Deja la terminal abierta: los cambios guardados se reflejan automáticamente. Detén el servidor con `Ctrl+C`. Que una pantalla cargue no demuestra que sus operaciones financieras sean correctas.
+Abre [localhost:3000](http://localhost:3000). La aplicación usa la base configurada: guardar o eliminar desde los formularios modifica sus datos. Las pruebas automatizadas usan datos ficticios y una base local en memoria, sin acceder a Supabase remoto.
 
 ## Comprobaciones
 
-Desde la raíz del repositorio:
-
 ```powershell
+npm run db:types:check
 npm test
 npm run typecheck
 npm run lint
+npm audit --omit=dev --audit-level=high
 npm run build
 ```
 
-**Las cuatro comprobaciones pasan en esta entrega.** El build descarga las fuentes Geist y necesita acceso de red. También se comprobó el arranque de producción y HTTP 200 en las trece rutas. Esto no certifica el comportamiento del navegador, RLS ni los formularios contra la base real; consulta [validación y límites](docs/VALIDACION.md).
+GitHub Actions ejecuta estas comprobaciones en cada push y pull request. El build necesita descargar las fuentes Geist. Las pruebas automatizadas no sustituyen las comprobaciones de correo y navegador contra el servicio real.
 
-## Documentación y continuación
+El esquema reproducible, las migraciones y el procesamiento programado están en [supabase](supabase/README.md). Nunca ejecutes la baseline sobre una base existente ni subas respaldos o información personal al repositorio.
 
-- [Primera entrega](docs/ETAPA_1.md): correcciones, pruebas y pendientes concretos.
-- [Segunda entrega](docs/ETAPA_2.md): migraciones, acceso privado, recuperación y configuración pendiente de Supabase.
-- [Estado del proyecto](docs/ESTADO_PROYECTO.md): auditoría inicial; arquitectura, pantallas reales, base documentada y problemas priorizados.
-- [Plan de desarrollo](docs/PLAN_DESARROLLO.md): alcance personal, fases y criterios para completar el producto.
-- [Plan de despliegue](docs/DESPLIEGUE.md): entorno privado, demo pública y preparación para publicación.
-- [Guía de Git](docs/GIT.md): estado inicial, commits, ramas, pull requests y convenciones.
-- [Validación técnica](docs/VALIDACION.md): comprobaciones ejecutadas y límites de la auditoría.
-- [SQL de referencia](docs/referencia/base_de_datos.txt) e [historial de desarrollo](docs/referencia/historial_desarrollo.md): antecedentes conservados; no equivalen al estado verificado del servicio remoto.
+## Despliegue previsto en Vercel
 
-El siguiente bloque es inspeccionar, respaldar y validar las migraciones y políticas contra Supabase existente. Después se implementarán las ocurrencias pendientes y su confirmación manual/automática. La publicación para evaluadores tendrá cuentas propias y datos ficticios, separada del uso personal.
+Importa este repositorio como proyecto Next.js. **Root Directory: `./`**, porque `package.json` está en la raíz del repositorio; rama de producción: `main`. Configura las variables de Supabase en Vercel y vuelve a desplegar si cambian.
 
-## Publicación prevista
+En Supabase, configura Site URL y las redirecciones de confirmación/recuperación para el dominio definitivo, conservando localhost para desarrollo. Revisa el servicio de correo, las cuotas y la protección contra abuso antes de abrir el registro. Las previews que necesiten probar datos deben utilizar un entorno de prueba, separado de la información personal.
 
-Supabase ya proporciona autenticación y datos. La publicación futura añade alojamiento para Next.js en Vercel, manteniendo ese backend. Como `package.json` está en la raíz del repositorio Git, la configuración **Root Directory** será `./` para este repositorio. Las variables de entorno se configurarán en el proveedor; no se publicarán credenciales ni datos financieros personales.
+La publicación del código no publica la base de datos. Las migraciones se aplican por separado y con respaldo; fusionar una rama no modifica Supabase.
 
-Todavía no hay una demo publicada y validada en esta documentación. El despliegue queda condicionado a validar restricciones/permisos remotos y probar el recorrido completo con datos ficticios. El procedimiento está en [Plan de despliegue](docs/DESPLIEGUE.md).
+## Recursos y licencia
 
-## Licencia
-
-La licencia todavía no se ha elegido. Debe definirse antes de presentar el proyecto como reutilizable por terceros.
+Los avisos de los recursos utilizados están en [Créditos](app/creditos/page.tsx) y [textos de licencia](public/third-party-notices.txt). La licencia del código propio todavía no se ha elegido; no se presenta el repositorio como código abierto reutilizable.

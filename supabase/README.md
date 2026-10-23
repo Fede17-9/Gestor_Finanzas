@@ -1,36 +1,29 @@
 # Base de datos de Flux
 
-Supabase sigue siendo el backend. Estos archivos versionan el esquema; **no se han aplicado al proyecto remoto existente**.
+Supabase proporciona autenticación y PostgreSQL. Esta carpeta conserva el esquema reproducible, la seguridad y las operaciones transaccionales de la aplicación.
 
-## Archivos y orden
+## Migraciones, en orden
 
-1. `inspect.sql`: inspección administrativa de solo lectura. Devuelve estructura, permisos, políticas, índices, restricciones, triggers y catálogo contable, sin exportar perfiles ni movimientos. Guardar su resultado fuera del repositorio público. No sustituye un respaldo completo.
-2. `migrations/20261020000100_baseline.sql`: crea las siete tablas históricas y el catálogo; bloquea el acceso de la API mientras se prepara la seguridad. **Solo para una base nueva sin tablas de la aplicación**. Se detiene si encuentra cualquiera de ellas.
-3. `migrations/20261020000200_private_finance.sql`: restricciones, índices, validación de categorías, privilegios mínimos y RLS por propietario. Solo admite catálogo y estructura compatibles. Sustituye las políticas de las siete tablas de la aplicación, sin tocar otras tablas.
+1. `20261020000100_baseline.sql`: tablas iniciales y catálogo contable. Solo para una base nueva sin tablas de la aplicación.
+2. `20261020000200_private_finance.sql`: validación, índices, privilegios y RLS por propietario.
+3. `20261022000100_recurrence_occurrences.sql`: reglas, vencimientos, confirmaciones, historial y procesamiento de recurrencias.
+4. `20261022000200_budgets_and_goal_ledger.sql`: presupuestos, metas e historial de aportes y reversiones.
 
-Cada migración es transaccional. Una fila histórica inválida, un alias duplicado al normalizarlo o una referencia de categoría ajena hacen fallar la transacción: no se borran ni reparan datos automáticamente. Se debe revisar la causa antes de reintentar.
+Las migraciones son transaccionales. Los errores revierten la operación; no se borran ni reparan datos automáticamente. No ejecutes la baseline ni un reset sobre tu proyecto existente. Los cambios de esquema se prueban primero en una copia con respaldo privado.
 
-## Proyecto Supabase existente
+El propietario ya aplicó los cambios de las fases 2 a 4 al proyecto existente mediante el SQL Editor y reportó las pruebas funcionales y de aislamiento. Las pruebas locales reconstruyen el esquema versionado; no certifican que futuras modificaciones manuales del servicio remoto coincidan con él. Tampoco implican que el historial de Supabase CLI se haya reconciliado automáticamente.
 
-No ejecutar la baseline ni hacer `db reset` sobre él. Primero:
+## Herramientas conservadas
 
-1. Inspeccionar estructura, políticas, privilegios, funciones expuestas, triggers de `auth.users` y registro de migraciones. `inspect.sql` cubre las tablas conocidas; revisar además funciones/RPC, otras tablas y vistas del proyecto.
-2. Exportar esquema y datos mediante acceso administrativo; guardar el respaldo en privado y comprobar su restauración en otro entorno.
-3. Comparar contra la baseline y resolver diferencias en una copia. Un trigger remoto de creación de perfiles puede requerir reconciliación con el nuevo flujo de la aplicación.
-4. Integrar el historial de migraciones existente. Marcar una baseline como aplicada solo tras demostrar equivalencia; no crear un historial ficticio para saltarse una diferencia.
-5. Ensayar la migración de seguridad, conservar los resultados y repetir pruebas directas con usuarios A/B y sesión anónima mediante la API real.
-6. Aplicar cambios revisados y generar tipos TypeScript desde el esquema real. Volver a probar registro, confirmación, recuperación, categorías y formularios.
+- `inspect.sql`: consulta estructura, permisos y funciones sin exportar perfiles ni movimientos.
+- `verify_isolation.sql`: verificación administrativa de aislamiento entre cuentas con reversión de los datos de prueba. Revisa sus requisitos antes de ejecutarla.
+- `enable_recurrence_cron.sql`: configura la tarea de recurrencias. El proyecto existente tiene `flux-recurrencias` programada cada quince minutos; no hace falta reinstalarla por fusionar ramas.
+- `npm run db:types`: genera `lib/database.types.ts` desde las migraciones usando PostgreSQL local en memoria.
+- `npm run db:types:check`: comprueba que los tipos versionados coincidan con ese esquema.
+- `npm test`: valida permisos, aislamiento, recurrencias, presupuestos y metas con roles simulados en PGlite; no requiere Docker ni credenciales remotas.
 
-La aplicación usa una clave pública. Las migraciones requieren acceso administrativo; una clave `service_role` nunca debe incluirse en `.env` pública ni en el navegador. La migración no configura SMTP, plantillas de correo, URLs de Auth, protección contra abuso, funciones remotas preexistentes ni copias de seguridad.
+## Configuración externa
 
-## Pruebas sin tocar Supabase
+Las migraciones no configuran URLs de Auth, SMTP, límites de correo ni respaldos. Al publicar, revisa en Supabase **Authentication → URL Configuration** el dominio de la aplicación y sus callbacks. Prueba registro, confirmación y recuperación en ese dominio.
 
-Con Node 24 y dependencias instaladas:
-
-```powershell
-npm test
-```
-
-`tests/database.test.mjs` ejecuta ambas migraciones en PostgreSQL local en memoria con PGlite. Simula `auth.users`, `auth.uid()` y roles de Supabase, prueba aislamiento y validación SQL, y descarta la base al terminar. No requiere Docker, CLI de Supabase ni credenciales. PGlite es dependencia de desarrollo; la aplicación publicada sigue usando Supabase.
-
-Estas pruebas demuestran el comportamiento SQL bajo ese entorno, no la configuración efectiva del servicio remoto, sus JWT, correos, PostgREST o funciones adicionales. Ver [entrega de acceso privado](../docs/ETAPA_2.md).
+La aplicación utiliza una clave pública con RLS. Las operaciones administrativas requieren un entorno privado; nunca coloques claves secretas o `service_role` en el navegador. Guarda respaldos fuera del repositorio y comprueba que puedan restaurarse.
