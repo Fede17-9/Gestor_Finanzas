@@ -90,7 +90,7 @@ export default function CalendarioPage() {
         </div>
 
         {/* Cajas de estimaciones divididas */}
-        <div className="flex max-w-full flex-wrap bg-surface border border-line rounded-2xl overflow-hidden">
+        <div className="flex bg-surface border border-line rounded-2xl overflow-hidden ">
           {/* Reales (Históricos del Mes) */}
           <div className="px-5 py-3 flex flex-col justify-center border-r border-line bg-paper/50">
             <span className="text-xs text-muted font-bold  tracking-normal mb-1 flex items-center gap-1">
@@ -154,7 +154,7 @@ export default function CalendarioPage() {
 
             <div className="grid grid-cols-7 gap-2 sm:gap-4">
               {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-                <div key={`empty-${i}`} className="calendar-day border border-transparent rounded-2xl opacity-20 bg-paper/10"></div>
+                <div key={`empty-${i}`} className="min-h-[100px] border border-transparent rounded-2xl opacity-20 bg-paper/10"></div>
               ))}
 
               {Array.from({ length: daysInMonth }).map((_, i) => {
@@ -163,32 +163,32 @@ export default function CalendarioPage() {
                 const isToday = today.getDate() === dayNum && today.getMonth() === currentDate.getMonth() && today.getFullYear() === currentDate.getFullYear();
 
                 return (
-                  <div key={dayNum} className={`calendar-day flex flex-col p-2 border rounded-2xl transition-all duration-300 hover:border-zinc-500  ${isToday ? 'border-accent/50 bg-accent/5 ring-1 ring-accent/20' : 'border-line/60 bg-paper/30'
+                  <div key={dayNum} className={`min-h-[110px] min-w-0 flex flex-col p-2 border rounded-2xl transition-all duration-300 hover:border-zinc-500  ${isToday ? 'border-accent/50 bg-accent/5 ring-1 ring-accent/20' : 'border-line/60 bg-paper/30'
                     }`}>
                     <span className={`text-xs tabular-nums font-bold mb-2 text-right w-full ${isToday ? 'text-accent' : 'text-muted'}`}>
                       {dayNum.toString().padStart(2, '0')}
                     </span>
 
-                    <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <div className="flex flex-col gap-1.5 overflow-y-auto custom-scrollbar flex-1">
                       {events.map((evt) => {
                         const sign = movementSign(evt.id_tipo);
                         const isIngreso = sign > 0;
                         return (
-                          <div key={evt.key} className={`calendar-event ${sign > 0 ? 'income' : sign < 0 ? 'expense' : ''}`}>
-                            <span className="calendar-event-label">
+                          <div key={evt.key} className={`w-full min-w-0 overflow-hidden px-1.5 py-1.5 rounded-lg bg-paper/80 border text-xs tabular-nums flex flex-col items-stretch gap-1 ${isIngreso ? ' border-accent/30' : ' border-danger/30'
+                            }`}>
+                            <span className="flex min-w-0 items-center gap-1 text-muted" title={evt.categorias?.nombre_categoria || 'Desc'}>
                               {evt.isReal ? (
                                 evt.isAutoDB ?
-                                  <Zap size={12} />
-                                  : <CheckCircle2 size={12} />
+                                  <Zap size={8} className={isIngreso ? 'text-emerald-500 fill-emerald-500' : 'text-rose-500 fill-rose-500'} />
+                                  : <CheckCircle2 size={8} className="text-muted" />
                               ) : (
-                                <Zap size={12} />
+                                <Zap size={8} className={isIngreso ? 'text-accent fill-accent opacity-50' : 'text-danger fill-danger opacity-50'} />
                               )}
-                              <span className="calendar-event-title" title={evt.categorias?.nombre_categoria || 'Sin categoría'}>{evt.categorias?.nombre_categoria || 'Sin categoría'}</span>
+                              <span className="truncate">{evt.categorias?.nombre_categoria || (evt.isReal ? 'REAL' : 'PROYECTO')}</span>
                             </span>
-                            <strong className={`calendar-event-amount ${isIngreso ? 'text-accent' : sign < 0 ? 'text-danger' : 'text-muted'}`}>
+                            <span style={{ overflowWrap: 'anywhere' }} className={`block max-w-full break-words font-semibold ${isIngreso ? 'text-accent' : 'text-danger'}`}>
                               {sign > 0 ? '+' : sign < 0 ? '-' : ''}{formatAmount(evt.monto_recurrente, currency)}
-                            </strong>
-                            <span className="calendar-event-status">{evt.isReal ? 'Confirmado' : evt.key.startsWith('pending:') ? 'Pendiente' : 'Previsto'}</span>
+                            </span>
                           </div>
                         );
                       })}
