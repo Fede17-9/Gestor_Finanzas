@@ -5,7 +5,9 @@ import DashboardHeader from '@/components/DashboardHeader';
 import CategoryChart from '@/components/CategoryChart';
 import { supabase } from '@/lib/supabase';
 import { createFinanceReader } from '@/lib/finance-data';
-import { civilToday, civilToDate, formatAmount, movementSign, summarizeMovements } from '@/lib/finance';
+import { civilToday, civilToDate, formatAmount, movementSign, readAllPages, summarizeMovements } from '@/lib/finance';
+import { budgetProgress } from '@/lib/planning';
+import type { Row } from '@/lib/database.types';
 import type { Movement, Profile } from '@/lib/finance';
 import { useRouter } from 'next/navigation';
 import { Activity, Plus, TrendingUp, TrendingDown, ArrowLeftRight } from 'lucide-react';
@@ -18,6 +20,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [allMovs, setAllMovs] = useState<Movement[]>([]);
+  const [budgets, setBudgets] = useState<Row<'presupuestos_mensuales'>[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => civilToDate(civilToday()));
@@ -33,10 +36,15 @@ export default function DashboardPage() {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw new Error('No se pudo comprobar tu sesión.');
         if (!session) { router.replace('/login'); return; }
-        const [userProfile, movements] = await Promise.all([
+        const [userProfile, movements, budgets] = await Promise.all([
           reader.profile(session.user.id), reader.movements(session.user.id),
+          readAllPages(async(from,to)=>{
+            const {data,error}=await supabase.from('presupuestos_mensuales').select('*').eq('id_usuario',session.user.id).order('id_presupuesto').range(from,to);
+            if(error||!data)throw new Error('No se pudieron cargar las alertas de presupuesto.');
+            return data;
+          }),
         ]);
-        if (active) { setProfile(userProfile); setAllMovs(movements); }
+        if (active) { setProfile(userProfile); setAllMovs(movements); setBudgets(budgets); }
       } catch (error) {
         if (active) setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar tus datos.');
       } finally {
@@ -49,11 +57,13 @@ export default function DashboardPage() {
 
   const computed = useMemo(() => {
     try {
-      return { summary: summarizeMovements(allMovs, selectedDate.getFullYear(), selectedDate.getMonth()), error: '' };
+      const alerts=budgets.filter(b=>b.anio_calendario===selectedDate.getFullYear()&&b.mes_calendario===selectedDate.getMonth()+1)
+        .map(b=>budgetProgress(b,allMovs)).filter(p=>p.status!=='normal');
+      return { summary: summarizeMovements(allMovs, selectedDate.getFullYear(), selectedDate.getMonth()), alerts, error: '' };
     } catch (error) {
-      return { summary: null, error: error instanceof Error ? error.message : 'No se pudieron calcular los totales.' };
+      return { summary: null, alerts: [], error: error instanceof Error ? error.message : 'No se pudieron calcular los totales.' };
     }
-  }, [allMovs, selectedDate]);
+  }, [allMovs, selectedDate, budgets]);
   const summary = computed.summary;
   if (!loading && (loadError || computed.error || !profile || !summary)) {
     return <div role="alert" className="text-red-300 p-6 border border-red-400/30 rounded-2xl">
@@ -94,6 +104,10 @@ export default function DashboardPage() {
       </p>
 
       {/* Cards de Métricas Rápidas conectadas a Supabase */}
+      {computed.alerts.length>0&&<p role="status" className="mb-6 rounded-xl border border-amber-600/40 p-4 text-amber-300">
+        {computed.alerts.length} presupuesto(s) alcanzaron su umbral de alerta en {selectedDate.toLocaleDateString('es-CO',{month:'long',year:'numeric'})}.
+        {' '}<Link className="underline" href={`/dashboard/presupuestos?mes=${selectedDate.getFullYear()}-${String(selectedDate.getMonth()+1).padStart(2,'0')}`}>Revisar presupuestos</Link>
+      </p>}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         {[
           { title: "INGRESO MENSUAL", amount: formatAmount(stats.ingresoMensual, userData.moneda), icon: TrendingUp, color: "text-[#39FF14]" },

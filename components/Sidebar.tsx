@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   ArrowLeftRight,
   Target,
+  Wallet,
   Calendar,
   Settings,
   LogOut,
@@ -19,6 +20,7 @@ const menuItems = [
   { name: 'Movimientos', icon: ArrowLeftRight, href: '/dashboard/movimientos' },
   { name: 'Calendario', icon: Calendar, href: '/dashboard/calendario' },
   { name: 'Metas', icon: Target, href: '/dashboard/metas' },
+  { name: 'Presupuestos', icon: Wallet, href: '/dashboard/presupuestos' },
   { name: 'Recurrencias', icon: Repeat, href: '/dashboard/recurrencias' },
   { name: 'Configuración', icon: Settings, href: '/dashboard/configuracion' },
 ];
