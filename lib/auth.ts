@@ -1,3 +1,4 @@
+import { captchaOptions, authRequestError } from './captcha.ts';
 import type { User } from '@supabase/supabase-js';
 import type { AppSupabaseClient } from './supabase.ts';
 import { isProfileAvatar } from './profile-avatars.ts';
@@ -85,24 +86,25 @@ export async function initializeMetadataProfile(client: AppSupabaseClient): Prom
   catch { return '/completar-perfil'; }
 }
 
-export async function registerAccount(client: AppSupabaseClient, email: string, password: string, input: ProfileInput, origin: string) {
+export async function registerAccount(client: AppSupabaseClient, email: string, password: string, input: ProfileInput, origin: string, captchaToken?: string) {
   const profile = validateProfile(input);
   validatePassword(password);
   const { data, error } = await client.auth.signUp({
     email: email.trim(), password,
-    options: { data: profile, emailRedirectTo: authRedirect(origin) },
+    options: { data: profile, emailRedirectTo: authRedirect(origin), ...captchaOptions(captchaToken) },
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(authRequestError(error, 'No se pudo crear la cuenta. Revisa los datos e intenta de nuevo.'));
   // With Confirm email enabled there is no session yet: no public table INSERT.
   if (!data.session) return { confirmationRequired: true, destination: null };
   return { confirmationRequired: false, destination: await initializeMetadataProfile(client) };
 }
 
-export async function resendSignupConfirmation(client: AppSupabaseClient, email: string, origin: string): Promise<void> {
+export async function resendSignupConfirmation(client: AppSupabaseClient, email: string, origin: string, captchaToken?: string): Promise<void> {
   const { error } = await client.auth.resend({
-    type: 'signup', email: email.trim(), options: { emailRedirectTo: authRedirect(origin) },
+    type: 'signup', email: email.trim(), options: { emailRedirectTo: authRedirect(origin), ...captchaOptions(captchaToken) },
   });
   if (error) {
+    if (error.code === 'captcha_failed') throw new Error(authRequestError(error, ''));
     if (error.status === 429 || error.code === 'over_email_send_rate_limit' || error.code === 'over_request_rate_limit') {
       throw new Error('Se alcanzó el límite de solicitudes de correo. Espera un tiempo antes de volver a intentar.');
     }
@@ -110,11 +112,12 @@ export async function resendSignupConfirmation(client: AppSupabaseClient, email:
   }
 }
 
-export async function requestPasswordRecovery(client: AppSupabaseClient, email: string, origin: string): Promise<void> {
+export async function requestPasswordRecovery(client: AppSupabaseClient, email: string, origin: string, captchaToken?: string): Promise<void> {
   const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
-    redirectTo: authRedirect(origin, '/actualizar-clave'),
+    redirectTo: authRedirect(origin, '/actualizar-clave'), ...captchaOptions(captchaToken),
   });
   if (!error) return; // Acceptance does not prove account existence or inbox delivery.
+  if (error.code === 'captcha_failed') throw new Error(authRequestError(error, ''));
   if (error.status === 429 || error.code === 'over_email_send_rate_limit' || error.code === 'over_request_rate_limit') {
     throw new Error('El servicio alcanzó su límite de envío de correos. Espera antes de volver a intentar. Los correos de registro y recuperación comparten ese límite.');
   }
@@ -175,4 +178,11 @@ export async function completeAuthLink(client: AppSupabaseClient, href: string) 
   const user = await verifiedUser(client);
   if (!user) throw new Error('No se pudo verificar la identidad del enlace.');
   return { userId: user.id, destination: recovery ? '/actualizar-clave' : await initializeMetadataProfile(client) };
+}
+
+export async function signInAccount(client: AppSupabaseClient, email: string, password: string, captchaToken?: string): Promise<void> {
+  const { error } = await client.auth.signInWithPassword({
+    email: email.trim(), password, options: captchaOptions(captchaToken),
+  });
+  if (error) throw new Error(authRequestError(error, 'No se pudo iniciar sesión. Revisa el correo y la contraseña.'));
 }
