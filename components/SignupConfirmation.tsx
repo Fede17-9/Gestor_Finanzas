@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import AuthCaptcha, { useAuthCaptcha } from '@/components/AuthCaptcha';
 import AuthPanel from '@/components/AuthPanel';
 import { confirmedSignupDestination, resendSignupConfirmation } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -15,6 +16,7 @@ export default function SignupConfirmation({ email, onChangeEmail }: { email: st
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const lock = useRef(false);
+  const captcha = useAuthCaptcha();
 
   useEffect(() => {
     const timer = setInterval(() => setRemaining(Math.max(0, Math.ceil((retryAt - Date.now()) / 1000))), 1000);
@@ -47,12 +49,14 @@ export default function SignupConfirmation({ email, onChangeEmail }: { email: st
 
   async function resend() {
     if (lock.current || Date.now() < retryAt) return;
+    if (!captcha.ready) return;
     lock.current = true; setLoading(true); setError(''); setMessage('');
     try {
-      await resendSignupConfirmation(supabase, email, window.location.origin);
+      await resendSignupConfirmation(supabase, email, window.location.origin, captcha.token);
       setMessage('Solicitud de reenvío recibida. Revisa tu correo y la carpeta de spam.');
     } catch (error) { setError(error instanceof Error ? error.message : 'No se pudo solicitar el reenvío.'); }
     finally {
+      captcha.reset();
       setRetryAt(Date.now() + 60_000); setRemaining(60);
       lock.current = false; setLoading(false);
     }
@@ -64,7 +68,8 @@ export default function SignupConfirmation({ email, onChangeEmail }: { email: st
     <p className="text-sm text-muted">Si tu cuenta ya estaba confirmada, inicia sesión.</p>
     {message && <p role="status" className="text-accent text-sm">{message}</p>}
     {error && <p role="alert" className="text-danger text-sm">{error}</p>}
-    <button type="button" onClick={() => void resend()} disabled={loading || remaining > 0}
+    <AuthCaptcha key={captcha.revision} onToken={captcha.setToken}/>
+    <button type="button" onClick={() => void resend()} disabled={loading || remaining > 0 || !captcha.ready}
       className="button-primary w-full">
       {loading ? 'Solicitando…' : remaining > 0 ? `Reenviar en ${remaining} s` : 'Reenviar confirmación'}
     </button>

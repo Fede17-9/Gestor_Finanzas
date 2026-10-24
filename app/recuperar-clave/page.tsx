@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import AuthCaptcha, { useAuthCaptcha } from '@/components/AuthCaptcha';
 import AuthPanel, { authInput } from '@/components/AuthPanel';
 import { supabase } from '@/lib/supabase';
 import { requestPasswordRecovery } from '@/lib/auth';
@@ -14,6 +15,7 @@ export default function RecoverPasswordPage() {
   const [remaining, setRemaining] = useState(0);
   const retryAt = useRef(0);
   const lock = useRef(false);
+  const captcha = useAuthCaptcha();
   useEffect(() => {
     const timer = setInterval(() => setRemaining(Math.max(0, Math.ceil((retryAt.current - Date.now()) / 1000))), 1000);
     return () => clearInterval(timer);
@@ -21,12 +23,14 @@ export default function RecoverPasswordPage() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (lock.current || Date.now() < retryAt.current) return;
+    if (!captcha.ready) return;
     lock.current = true; setLoading(true); setError(''); setSent(false);
     try {
-      await requestPasswordRecovery(supabase, email, window.location.origin);
+      await requestPasswordRecovery(supabase, email, window.location.origin, captcha.token);
       setSent(true);
     } catch (error) { setError(error instanceof Error ? error.message : 'No se pudo enviar la solicitud.'); }
     finally {
+      captcha.reset();
       retryAt.current = Date.now() + 60_000; setRemaining(60);
       lock.current = false; setLoading(false);
     }
@@ -37,7 +41,8 @@ export default function RecoverPasswordPage() {
     <form onSubmit={submit} className="space-y-4">
         <label htmlFor="recovery-email" className="block text-sm">Correo electrónico</label>
         <input id="recovery-email" type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} className={authInput} />
-        <button disabled={loading || remaining > 0} className="button-primary w-full">{loading ? 'Solicitando…' : remaining > 0 ? `Volver a solicitar en ${remaining} s` : 'Enviar enlace'}</button>
+        <AuthCaptcha key={captcha.revision} onToken={captcha.setToken}/>
+        <button disabled={loading || remaining > 0 || !captcha.ready} className="button-primary w-full">{loading ? 'Solicitando…' : remaining > 0 ? `Volver a solicitar en ${remaining} s` : 'Enviar enlace'}</button>
     </form>
     {error && <p role="alert" className="text-danger">{error}</p>}
     <Link href="/login" className="block text-sm underline">Volver al inicio de sesión</Link>
